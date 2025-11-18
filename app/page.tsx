@@ -17,7 +17,7 @@ export default function Home() {
             <div className="text-4xl mb-4">📸</div>
             <h3 className="text-lg font-semibold mb-2">Smart Upload</h3>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              Take photos or upload images of your clothing items
+              Take photos or upload images of your clothing items.
             </p>
           </div>
 
