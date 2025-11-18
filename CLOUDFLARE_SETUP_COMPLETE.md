@@ -107,16 +107,17 @@ Open http://localhost:3000 and test:
    Environment variables: NODE_VERSION=18
    ```
 
-8. Add environment variables:
+8. Add environment variables (PUBLIC keys only):
    - Click **"Add variable"** for each:
    ```
-   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = (your key)
-   CLERK_SECRET_KEY = (your key)
+   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = pk_test_ZGV2b3RlZC1kcnVtLTQ3LmNsZXJrLmFjY291bnRzLmRldiQ
    NEXT_PUBLIC_CLERK_SIGN_IN_URL = /sign-in
    NEXT_PUBLIC_CLERK_SIGN_UP_URL = /sign-up
    NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL = /closet
    NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL = /closet
    ```
+
+   **Note**: `CLERK_SECRET_KEY` is stored in Cloudflare Secrets vault (more secure)
 
 9. Click **"Save and Deploy"**
 
@@ -210,6 +211,8 @@ These require API routes (Phase 2):
 - **Setup Instructions**: `SETUP_INSTRUCTIONS.md`
 - **Deployment Guide**: `DEPLOYMENT.md`
 - **Setup Status**: `SETUP_STATUS.md`
+- **Security Guide**: `SECURITY.md` - Secrets management and security best practices
+- **Clerk Setup**: `CLERK_SETUP_GUIDE.md`
 - **GitHub**: https://github.com/joerican/aiclosetassistant
 
 ## Quick Commands Reference
