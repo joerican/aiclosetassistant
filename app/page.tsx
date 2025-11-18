@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-gradient-to-b from-white to-gray-100 dark:from-gray-900 dark:to-black">
@@ -37,18 +39,18 @@ export default function Home() {
         </div>
 
         <div className="flex gap-4 mt-8">
-          <a
+          <Link
             href="/sign-up"
             className="px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors"
           >
             Get Started
-          </a>
-          <a
+          </Link>
+          <Link
             href="/sign-in"
             className="px-8 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 font-semibold rounded-lg transition-colors"
           >
             Sign In
-          </a>
+          </Link>
         </div>
       </main>
 

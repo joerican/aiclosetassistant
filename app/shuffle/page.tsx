@@ -6,11 +6,17 @@ import Link from "next/link";
 import { ClothingItem } from "@/types";
 
 export default function ShufflePage() {
+  interface MockItem {
+    id: string;
+    category: "tops" | "bottoms" | "shoes";
+    name: string;
+  }
+
   const [isShuffling, setIsShuffling] = useState(false);
   const [currentOutfit, setCurrentOutfit] = useState<{
-    top?: ClothingItem;
-    bottom?: ClothingItem;
-    shoes?: ClothingItem;
+    top?: MockItem;
+    bottom?: MockItem;
+    shoes?: MockItem;
   }>({});
 
   // Mock data for demonstration

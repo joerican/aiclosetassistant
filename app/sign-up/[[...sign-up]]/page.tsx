@@ -1,5 +1,7 @@
 import { SignUp } from "@clerk/nextjs";
 
+export const runtime = 'edge';
+
 export default function SignUpPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-white to-gray-100 dark:from-gray-900 dark:to-black p-4">

@@ -48,8 +48,8 @@ export interface WearHistory {
 }
 
 export interface Env {
-  DB: D1Database;
-  CLOSET_IMAGES: R2Bucket;
+  DB: any; // D1Database
+  CLOSET_IMAGES: any; // R2Bucket
   CLERK_SECRET_KEY: string;
 }
 

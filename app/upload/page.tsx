@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import { UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { Category } from "@/types";
-import removeBackground from "@imgly/background-removal";
+import { removeBackground } from "@imgly/background-removal";
 
 export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
