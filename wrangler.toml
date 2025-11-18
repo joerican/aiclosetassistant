@@ -1,6 +1,5 @@
 name = "ai-closet-assistant"
 compatibility_date = "2025-01-15"
-account_id = "73d8f7df9a58eb64c1cc943d0c76d474"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
 
