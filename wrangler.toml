@@ -1,17 +1,18 @@
 name = "ai-closet-assistant"
 compatibility_date = "2025-01-15"
+account_id = "73d8f7df9a58eb64c1cc943d0c76d474"
 
 # Note: After creating D1 database and R2 bucket, update the IDs below
 # Run: npx wrangler d1 create closet-db
 # Run: npx wrangler r2 bucket create closet-images
 
-# Uncomment and update after creating D1 database
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "closet-db"
-# database_id = "your-database-id-here"
+[[d1_databases]]
+binding = "DB"
+database_name = "closet-db"
+database_id = "6b5601ee-c870-422c-8818-2d4420f1c6f3"
 
-# Uncomment and update after creating R2 bucket
-# [[r2_buckets]]
-# binding = "CLOSET_IMAGES"
-# bucket_name = "closet-images"
+# R2 bucket - Must enable R2 in Cloudflare Dashboard first
+# Then run: npx wrangler r2 bucket create closet-images
+[[r2_buckets]]
+binding = "CLOSET_IMAGES"
+bucket_name = "closet-images"
