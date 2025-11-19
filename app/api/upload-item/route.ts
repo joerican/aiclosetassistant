@@ -1,3 +1,5 @@
+import { getCloudflareContext } from '@opennextjs/cloudflare';
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -13,8 +15,8 @@ export async function POST(request: Request) {
       });
     }
 
-    // Get Cloudflare bindings
-    const env = (process as any).env;
+    // Get Cloudflare bindings from context
+    const { env } = await getCloudflareContext();
     const R2 = env.CLOSET_IMAGES;
     const DB = env.DB;
 
@@ -62,10 +64,11 @@ export async function POST(request: Request) {
     });
 
     // Save to D1 database
-    const originalImageUrl = `https://closet-images.YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/${originalKey}`;
-    const thumbnailUrl = `https://closet-images.YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/${thumbnailKey}`;
+    // Use our API route to serve images from R2
+    const originalImageUrl = `/api/images/${originalKey}`;
+    const thumbnailUrl = `/api/images/${thumbnailKey}`;
     const backgroundRemovedUrl = processedKey
-      ? `https://closet-images.YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/${processedKey}`
+      ? `/api/images/${processedKey}`
       : null;
 
     await DB.prepare(

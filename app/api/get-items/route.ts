@@ -1,11 +1,13 @@
+import { getCloudflareContext } from '@opennextjs/cloudflare';
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const category = searchParams.get('category');
     const userId = searchParams.get('userId') || 'default-user'; // TODO: Replace with actual auth
 
-    // Get D1 binding
-    const env = (process as any).env;
+    // Get D1 binding from Cloudflare context
+    const { env } = await getCloudflareContext();
     const DB = env.DB;
 
     if (!DB) {

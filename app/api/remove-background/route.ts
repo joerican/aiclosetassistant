@@ -1,3 +1,5 @@
+import { getCloudflareContext } from '@opennextjs/cloudflare';
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -10,8 +12,7 @@ export async function POST(request: Request) {
       });
     }
 
-    // Get Cloudflare AI binding from the environment
-    const env = (process as any).env;
+    const { env } = await getCloudflareContext();
     const AI = env.AI;
 
     if (!AI) {
@@ -24,14 +25,13 @@ export async function POST(request: Request) {
     // Convert image to array buffer
     const imageBuffer = await image.arrayBuffer();
 
-    // Use Cloudflare AI to remove background
-    // Model: @cf/cloudflare/rembg (background removal)
-    const result = await AI.run('@cf/cloudflare/rembg', {
+    // Use Cloudflare AI to remove background with @cf/cloudflare/rembg model
+    const response = await AI.run('@cf/cloudflare/rembg', {
       image: Array.from(new Uint8Array(imageBuffer)),
     });
 
-    // Return the processed image
-    return new Response(result, {
+    // The response is already a PNG with transparent background
+    return new Response(response, {
       headers: {
         'Content-Type': 'image/png',
       },

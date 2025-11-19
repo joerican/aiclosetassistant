@@ -1,14 +1,55 @@
 # AI Closet Assistant - Project Documentation
 
-**Last Updated**: 2025-11-19 01:13 EST (Added .cfignore to prevent doc deploys)
+**Last Updated**: 2025-11-19 04:40 EST (Added Claude Code Configuration)
 **Status**: ✅ LIVE AND WORKING - Zero Warnings, Latest Everything
-**Production URL**: https://aiclosetassistant.pages.dev
+**Production URL**: https://aiclosetassistant.com
+**Worker URL**: https://aiclosetassistant.aiclosetassistant-com-account.workers.dev
+**Project Path**: `/Users/jorge/Code Projects/aiclosetassistant`
 
 > **📝 IMPORTANT**: Always read and update this documentation after making changes. This file is the single source of truth for the project's current state, decisions made, and ongoing work.
 >
 > **Note**: Documentation changes (*.md files) are ignored by Cloudflare Pages via `.cfignore` and won't trigger deployments.
 
 ## 🚨 Recent Breaking Changes
+
+**Claude Code Configuration Added (2025-11-19 04:40 EST)**:
+- ✅ **Added `.claude/rules.md`** - Automatic session initialization rules
+- ✅ **Added `.claude/commands/docs.md`** - `/docs` slash command to read documentation
+- **Working Directory**: Set to `/Users/jorge/Code Projects/aiclosetassistant`
+- **Auto-reads**: PROJECT_DOCUMENTATION.md at start of every session
+- **Benefits**: Session continuity, automatic context loading, consistent working directory
+
+**Custom Domain Added (2025-11-19 04:35 EST)**:
+- ✅ **Custom Domain**: https://aiclosetassistant.com now points to the Worker
+- **Worker URL**: https://aiclosetassistant.aiclosetassistant-com-account.workers.dev (still accessible)
+- **Configured in**: Cloudflare Dashboard → Workers & Pages → aiclosetassistant → Settings → Domains
+
+**Background Removal Fixed (2025-11-19 04:30 EST)**:
+- ✅ **Fixed**: Background removal now actually works using Cloudflare AI
+- **Issue**: Code was using incorrect Image Transformations API instead of Cloudflare AI Workers
+- **Solution**: Updated `/api/remove-background/route.ts` to use `AI.run('@cf/cloudflare/rembg')` directly
+- **What Changed**:
+  - Removed incorrect R2 upload/fetch logic from background removal endpoint
+  - Now properly calls Cloudflare AI binding with `@cf/cloudflare/rembg` model
+  - Returns actual PNG with transparent background instead of original image
+- **Status**: ✅ Deployed and working
+
+**Pages Removed - Workers-Only Deployment (2025-11-19 02:20 EST)**:
+- ✅ **Cloudflare Pages project deleted** - no longer needed
+- **Deployment**: Workers-only via `npx opennextjs-cloudflare deploy`
+- **Production URL**: https://aiclosetassistant.aiclosetassistant-com-account.workers.dev
+- **Why**: OpenNext creates `.open-next/worker.js` for Workers runtime, not static assets for Pages
+- **Benefits**: No wasted build minutes, cleaner deployment, single source of truth
+
+**Workers Deployment Discovery (2025-11-19 02:15 EST)**:
+- ⚠️ **CRITICAL**: OpenNext deploys to Cloudflare **Workers**, NOT Pages
+- Discovered Pages integration was incompatible with OpenNext
+- Manual deployment via `npx opennextjs-cloudflare deploy` required
+
+**Build Optimizations (2025-11-19 01:43 EST)**:
+- ✅ Enabled build caching on Cloudflare Pages for faster rebuilds
+- ✅ Added `.cfignore` to prevent documentation changes from triggering deployments
+- **Result**: Faster builds (30-60s with cache vs 90-120s) and fewer unnecessary deployments
 
 **Final Transitive Dependency Fix (2025-11-19 01:11 EST)**:
 - Added npm overrides for `formdata-node@^6.0.3` to eliminate last deprecation warning
@@ -88,11 +129,12 @@ A digital wardrobe organizer that lets users:
 - Better Next.js 15 support and ongoing updates
 - No deprecation warnings
 
-**Why Cloudflare Pages (not standalone Workers)?**
-- Automatic GitHub deployment on every push
-- Built-in support for Next.js via OpenNext adapter
-- Free tier includes D1, R2, and AI access
-- No separate Worker needed - Pages Functions handle everything
+**Why Cloudflare Workers (via OpenNext)?**
+- OpenNext is designed for Cloudflare Workers runtime
+- Supports full Node.js APIs (not just Edge runtime subset)
+- Access to D1, R2, and AI bindings
+- **Deployment**: Manual via `npx opennextjs-cloudflare deploy` or GitHub Actions
+- **Note**: GitHub Pages integration exists but OpenNext outputs to Workers, not static Pages
 
 **Why No Authentication Currently?**
 - Clerk auth library incompatible with Cloudflare Pages edge runtime
@@ -240,20 +282,38 @@ CREATE TABLE wear_history (
 
 ## 🚀 Deployment
 
-### Automatic Deployment
-- **Trigger**: Every `git push` to `main` branch
-- **Process**: GitHub → Cloudflare Pages → Build → Deploy
-- **Build Command**: `npx opennextjs-cloudflare build` (updated 2025-11-19)
-- **Output Directory**: `.open-next` (updated 2025-11-19)
-- **Build Time**: ~90-120 seconds
+### Current Deployment Strategy: Manual Workers Deployment
 
-### Manual Deployment
+**Production URL**: https://aiclosetassistant.com
+**Worker URL**: https://aiclosetassistant.aiclosetassistant-com-account.workers.dev
+
+OpenNext deploys to **Cloudflare Workers** only. Cloudflare Pages project has been removed.
+
+### How to Deploy
+
 ```bash
 cd "/Users/jorge/Code Projects/aiclosetassistant"
-git add -A
-git commit -m "Your message"
-git push origin main
+npx opennextjs-cloudflare deploy
 ```
+
+This deploys directly to Cloudflare Workers. The deployment:
+- Uploads worker code to Cloudflare
+- Binds D1, R2, and AI resources
+- Makes site live at the Workers URL
+- Applies observability logging configuration
+
+**Deployment Status**: ✅ Working perfectly
+
+### Alternative Deployment Options for Future
+
+If you want automatic deployments on GitHub push, you can set up GitHub Actions:
+
+#### GitHub Actions for Auto-Deploy
+- Set up GitHub Actions workflow to auto-deploy on push
+- Run `npx opennextjs-cloudflare deploy` in CI/CD
+- Best of both worlds: auto-deploy + Workers
+
+**To set up**: Create `.github/workflows/deploy.yml` with Cloudflare API token as secret
 
 ### Deployment Verification
 ```bash
@@ -392,6 +452,12 @@ cd "/Users/jorge/Code Projects/aiclosetassistant"
 npm run dev  # Runs on http://localhost:3000
 ```
 
+**With Enhanced Logging**:
+```bash
+NEXT_TELEMETRY_DEBUG=1 npm run dev
+```
+This enables Next.js debug logging including build events, telemetry, and configuration details.
+
 **Note**: Local dev won't have D1, R2, or AI bindings. Use `wrangler pages dev` for local testing with bindings:
 ```bash
 npm run pages:dev
@@ -454,6 +520,19 @@ Deployment logs available at:
 ---
 
 ## 📚 Important Files Reference
+
+### `.claude/rules.md`
+- **Purpose**: Claude Code automatic session initialization
+- **What it does**:
+  - Sets working directory to `/Users/jorge/Code Projects/aiclosetassistant`
+  - Forces reading PROJECT_DOCUMENTATION.md at session start
+  - Enforces documentation-first development philosophy
+- **Benefits**: Session continuity, automatic context, consistent environment
+
+### `.claude/commands/docs.md`
+- **Purpose**: Custom slash command for reading documentation
+- **Usage**: Type `/docs` to make Claude read PROJECT_DOCUMENTATION.md
+- **When to use**: Mid-session context refresh or after making changes
 
 ### `wrangler.jsonc`
 - **Purpose**: Cloudflare configuration for OpenNext adapter

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import VersionBadge from "./components/VersionBadge";
 
 export const metadata: Metadata = {
   title: "AI Closet Assistant",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <VersionBadge />
+      </body>
     </html>
   );
 }
