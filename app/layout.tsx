@@ -7,6 +7,9 @@ export const metadata: Metadata = {
   description: "AI-powered digital closet organizer with outfit shuffle feature",
 };
 
+export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
+
 export default function RootLayout({
   children,
 }: Readonly<{
