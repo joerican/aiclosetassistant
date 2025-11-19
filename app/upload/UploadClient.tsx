@@ -80,11 +80,11 @@ export default function UploadPage() {
 
     setIsProcessing(true);
     try {
-      // Dynamically import the background removal library only when needed
-      const { removeBackground } = await import("@imgly/background-removal");
-      const blob = await removeBackground(selectedFile);
-      const url = URL.createObjectURL(blob);
-      setProcessedPreview(url);
+      // TODO: Implement background removal using Cloudflare AI Workers
+      // For now, just use the original image
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      setProcessedPreview(preview);
+      alert("Background removal coming soon! For now, using original image.");
     } catch (error) {
       console.error("Error removing background:", error);
       alert("Failed to remove background. Please try again.");
