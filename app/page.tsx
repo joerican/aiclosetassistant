@@ -42,16 +42,16 @@ export default function Home() {
 
         <div className="flex gap-4 mt-8">
           <Link
-            href="/sign-up"
+            href="/closet"
             className="px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors"
           >
             Get Started
           </Link>
           <Link
-            href="/sign-in"
+            href="/upload"
             className="px-8 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 font-semibold rounded-lg transition-colors"
           >
-            Sign In
+            Add Items
           </Link>
         </div>
       </main>

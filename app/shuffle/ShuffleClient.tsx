@@ -92,7 +92,6 @@ export default function ShufflePage() {
               >
                 Back to Closet
               </Link>
-              <UserButton afterSignOutUrl="/" />
             </div>
           </div>
         </div>

@@ -132,7 +132,6 @@ export default function UploadPage() {
               >
                 Back to Closet
               </Link>
-              <UserButton afterSignOutUrl="/" />
             </div>
           </div>
         </div>
