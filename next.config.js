@@ -10,7 +10,7 @@ const nextConfig = {
     ],
   },
   skipTrailingSlashRedirect: true,
-  skipMiddlewareUrlNormalize: true,
+  skipProxyUrlNormalize: true,
   outputFileTracingRoot: __dirname,
 };
 
