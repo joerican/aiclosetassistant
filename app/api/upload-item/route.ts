@@ -47,6 +47,41 @@ export async function POST(request: Request) {
     const itemId = crypto.randomUUID();
     const timestamp = Date.now();
 
+    // Hash the original image for duplicate detection
+    const originalImageBuffer = await originalImage.arrayBuffer();
+    const originalHashBuffer = await crypto.subtle.digest('SHA-256', originalImageBuffer);
+    const originalImageHash = Array.from(new Uint8Array(originalHashBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    console.log('Original image hash:', originalImageHash);
+
+    // Check for duplicates
+    const duplicateCheck = await DB.prepare(
+      'SELECT id, subcategory, color, brand FROM clothing_items WHERE user_id = ? AND image_hash = ? LIMIT 1'
+    ).bind(userId, originalImageHash).first();
+
+    if (duplicateCheck) {
+      const itemInfo = duplicateCheck;
+      const itemDescription = [
+        itemInfo.subcategory,
+        itemInfo.color,
+        itemInfo.brand
+      ].filter(Boolean).join(', ') || 'an item';
+
+      console.log('Duplicate found:', itemDescription);
+      return new Response(
+        JSON.stringify({
+          error: 'duplicate',
+          message: `You've already uploaded ${itemDescription} to your closet.`,
+          existingItemId: duplicateCheck.id
+        }),
+        {
+          status: 409, // Conflict status code
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
     // Resize and optimize original image (max 1200px width for display)
     const originalKey = `original/${itemId}.webp`;
     const resizedOriginalResponse = await IMAGES
@@ -62,7 +97,6 @@ export async function POST(request: Request) {
 
     // Upload processed image to R2 (if provided) - resize to max 800px
     let processedKey = null;
-    let imageHash = null;
     if (processedImage) {
       processedKey = `processed/${itemId}.webp`;
       const resizedProcessedResponse = await IMAGES
@@ -70,13 +104,6 @@ export async function POST(request: Request) {
         .transform({ width: 800, fit: 'scale-down' })
         .output({ format: 'image/webp', quality: 90 });
       const resizedProcessedBuffer = await resizedProcessedResponse.response().arrayBuffer();
-
-      // Generate SHA-256 hash of the processed image for storage
-      // Note: Duplicate checking is now done on the client side before AI processing
-      const hashBuffer = await crypto.subtle.digest('SHA-256', resizedProcessedBuffer);
-      imageHash = Array.from(new Uint8Array(hashBuffer))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
 
       await R2.put(processedKey, resizedProcessedBuffer, {
         httpMetadata: {
@@ -131,7 +158,7 @@ export async function POST(request: Request) {
       originalImageUrl,
       thumbnailUrl,
       backgroundRemovedUrl,
-      imageHash,
+      originalImageHash,
       cost,
       datePurchased,
       storePurchasedFrom,

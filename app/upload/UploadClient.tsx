@@ -51,6 +51,7 @@ export default function UploadPage() {
   // Required fields
   const [category, setCategory] = useState<Category>("tops");
   const [subcategory, setSubcategory] = useState<string>("");
+  const [customSubcategory, setCustomSubcategory] = useState<string>("");
   const [colors, setColors] = useState<string>("");
 
   // Optional fields (collapsed by default)
@@ -161,38 +162,7 @@ export default function UploadPage() {
     setIsProcessing(true);
 
     try {
-      // Hash the file and check for duplicates BEFORE AI processing
-      const imageHash = await hashImageFile(imageFile);
-      const duplicateResult = await checkDuplicate(imageHash);
-
-      if (duplicateResult.duplicate && duplicateResult.existingItem) {
-        const itemInfo = duplicateResult.existingItem;
-        const itemDescription = [
-          itemInfo.subcategory,
-          itemInfo.color,
-          itemInfo.brand
-        ].filter(Boolean).join(', ') || 'this item';
-
-        setIsAnalyzing(false);
-        setIsProcessing(false);
-
-        const shouldContinue = confirm(
-          `You've already uploaded ${itemDescription} to your closet.\n\nDo you want to add it as a duplicate?`
-        );
-
-        if (!shouldContinue) {
-          // User declined - reset and return to upload
-          setSelectedFile(null);
-          setPreview("");
-          return;
-        }
-
-        // User wants duplicate - continue with processing
-        setIsAnalyzing(true);
-        setIsProcessing(true);
-      }
-
-      // Continue with AI analysis and background removal
+      // Run AI analysis and background removal in parallel
       const analysisPromise = analyzeImage(imageFile);
       const bgRemovalPromise = removeBackground(imageFile);
       await Promise.all([analysisPromise, bgRemovalPromise]);
@@ -223,10 +193,38 @@ export default function UploadPage() {
       if (result.success && result.metadata) {
         setAiMetadata(result.metadata);
         if (result.metadata.category && categories.includes(result.metadata.category as Category)) {
-          setCategory(result.metadata.category as Category);
-        }
-        if (result.metadata.subcategory) {
-          setSubcategory(result.metadata.subcategory);
+          const aiCategory = result.metadata.category as Category;
+          setCategory(aiCategory);
+
+          // Check if AI subcategory matches our predefined list
+          if (result.metadata.subcategory) {
+            const aiSubcategory = result.metadata.subcategory.toLowerCase();
+            const matchingOption = subcategoryOptions[aiCategory].find(
+              option => option.toLowerCase() === aiSubcategory
+            );
+
+            if (matchingOption) {
+              setSubcategory(matchingOption);
+              setCustomSubcategory("");
+            } else {
+              setSubcategory("Other");
+              setCustomSubcategory(result.metadata.subcategory);
+            }
+          }
+        } else if (result.metadata.subcategory) {
+          // If category doesn't match but we have subcategory, check against current category
+          const aiSubcategory = result.metadata.subcategory.toLowerCase();
+          const matchingOption = subcategoryOptions[category].find(
+            option => option.toLowerCase() === aiSubcategory
+          );
+
+          if (matchingOption) {
+            setSubcategory(matchingOption);
+            setCustomSubcategory("");
+          } else {
+            setSubcategory("Other");
+            setCustomSubcategory(result.metadata.subcategory);
+          }
         }
         if (result.metadata.colors && result.metadata.colors.length > 0) {
           setColors(result.metadata.colors.join(", "));
@@ -271,7 +269,11 @@ export default function UploadPage() {
       formData.append('originalImage', selectedFile);
       formData.append('category', category);
       formData.append('userId', 'default-user');
-      if (subcategory) formData.append('subcategory', subcategory);
+
+      // Use custom subcategory if "Other" is selected, otherwise use the selected value
+      const finalSubcategory = subcategory === "Other" ? customSubcategory : subcategory;
+      if (finalSubcategory) formData.append('subcategory', finalSubcategory);
+
       if (colors) formData.append('color', colors);
       if (brand) formData.append('brand', brand);
 
@@ -290,6 +292,11 @@ export default function UploadPage() {
       }
       if (storePurchasedFrom) formData.append('store_purchased_from', storePurchasedFrom);
 
+      // Add AI metadata if available
+      if (aiMetadata) {
+        formData.append('aiMetadata', JSON.stringify(aiMetadata));
+      }
+
       if (processedPreview) {
         const processedBlob = await fetch(processedPreview).then(r => r.blob());
         const processedFile = new File([processedBlob], 'processed.png', { type: 'image/png' });
@@ -303,6 +310,21 @@ export default function UploadPage() {
 
       if (!response.ok) {
         const result = await response.json();
+
+        // Handle duplicate error specially
+        if (result.error === 'duplicate') {
+          const shouldContinue = confirm(result.message + '\n\nWould you like to go back and try a different item?');
+          if (shouldContinue) {
+            // Reset the form
+            setSelectedFile(null);
+            setPreview("");
+            setProcessedPreview("");
+            setShowConfirmation(false);
+            setAiMetadata(null);
+          }
+          return;
+        }
+
         throw new Error(result.error || 'Failed to upload item');
       }
 
@@ -471,21 +493,38 @@ export default function UploadPage() {
 
                   <div>
                     <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Type *</label>
-                    <input
-                      type="text"
-                      list="subcategory-options"
+                    <select
                       value={subcategory}
-                      onChange={(e) => setSubcategory(e.target.value)}
-                      placeholder="e.g., t-shirt, jeans"
+                      onChange={(e) => {
+                        setSubcategory(e.target.value);
+                        if (e.target.value !== "Other") setCustomSubcategory("");
+                      }}
                       style={{ color: 'var(--text-primary)' }}
                       className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
-                    />
-                    <datalist id="subcategory-options">
+                    >
+                      <option value="">Select type...</option>
                       {subcategoryOptions[category].map((option) => (
-                        <option key={option} value={option} />
+                        <option key={option} value={option}>
+                          {option.charAt(0).toUpperCase() + option.slice(1)}
+                        </option>
                       ))}
-                    </datalist>
+                      <option value="Other">Other</option>
+                    </select>
                   </div>
+
+                  {subcategory === "Other" && (
+                    <div>
+                      <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Custom Type *</label>
+                      <input
+                        type="text"
+                        value={customSubcategory}
+                        onChange={(e) => setCustomSubcategory(e.target.value)}
+                        placeholder="Enter custom type"
+                        style={{ color: 'var(--text-primary)' }}
+                        className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
+                      />
+                    </div>
+                  )}
 
                   <div>
                     <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Colors *</label>
@@ -660,19 +699,25 @@ export default function UploadPage() {
               <div className="flex gap-4">
                 <button
                   onClick={handleUpload}
-                  disabled={isUploading || !category || !subcategory || !colors}
+                  disabled={
+                    isUploading ||
+                    !category ||
+                    !subcategory ||
+                    (subcategory === "Other" && !customSubcategory) ||
+                    !colors
+                  }
                   style={{
-                    backgroundColor: isUploading || !category || !subcategory || !colors ? '#9CA3AF' : 'var(--accent-primary)',
-                    boxShadow: isUploading || !category || !subcategory || !colors ? 'none' : '0 4px 12px rgba(212, 175, 55, 0.3)'
+                    backgroundColor: (isUploading || !category || !subcategory || (subcategory === "Other" && !customSubcategory) || !colors) ? '#9CA3AF' : 'var(--accent-primary)',
+                    boxShadow: (isUploading || !category || !subcategory || (subcategory === "Other" && !customSubcategory) || !colors) ? 'none' : '0 4px 12px rgba(212, 175, 55, 0.3)'
                   }}
                   className="flex-1 px-4 py-2 disabled:opacity-100 text-white rounded-lg font-medium transition-all hover:shadow-lg"
                   onMouseEnter={(e) => {
-                    if (!isUploading && category && subcategory && colors) {
+                    if (!isUploading && category && subcategory && !(subcategory === "Other" && !customSubcategory) && colors) {
                       e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!isUploading && category && subcategory && colors) {
+                    if (!isUploading && category && subcategory && !(subcategory === "Other" && !customSubcategory) && colors) {
                       e.currentTarget.style.backgroundColor = 'var(--accent-primary)';
                     }
                   }}
