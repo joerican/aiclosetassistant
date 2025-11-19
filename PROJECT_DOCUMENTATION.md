@@ -1,6 +1,6 @@
 # AI Closet Assistant - Project Documentation
 
-**Last Updated**: 2025-11-19 04:39 EST (✅ AI Working - License Agreement Added)
+**Last Updated**: 2025-11-19 06:37 EST (✅ Native Camera + Icons + Delete/Duplicate)
 **Status**: ✅ LIVE AND WORKING - Zero Warnings, Latest Everything
 **⚠️ LEGAL TODO**: Must add user license agreement before public launch (see docs/legal/llama-license-requirements.md)
 **Production URL**: https://aiclosetassistant.com
@@ -10,8 +10,49 @@
 > **📝 IMPORTANT**: Always read and update this documentation after making changes. This file is the single source of truth for the project's current state, decisions made, and ongoing work.
 >
 > **Note**: Documentation changes (*.md files) are ignored by Cloudflare Pages via `.cfignore` and won't trigger deployments.
+>
+> **Terminology**: cf = Cloudflare (Pages, Workers, D1, R2, etc.)
 
 ## 🚨 Recent Breaking Changes
+
+**Native Camera Integration + Icon System + Delete/Duplicate Features (2025-11-19 06:37 EST)**:
+- ✅ **Native Camera Picker**: Replaced WebRTC with HTML5 `capture="environment"` attribute
+  - Direct camera access without permission prompts
+  - Cleaner mobile experience
+  - Simplified codebase (removed WebRTC code)
+  - Button reordering: Take Photo first, Upload from Device second
+- ✅ **Modern Icon System**: All emojis replaced with Lucide React icons
+  - CoatHanger icon (@lucide/lab) for empty closet
+  - Hourglass icon for loading states
+  - Trousers icon (@lucide/lab) for bottoms category
+  - Upload and Camera icons on upload page
+  - Trash2 icon for delete functionality
+  - All icons: 1.5 stroke width for elegant appearance
+- ✅ **Vertical Scanning Animation**: AI processing visual feedback
+  - Gold scan line with glow effect (top-to-bottom)
+  - Shimmer effect on "Analyzing with AI..." text
+  - CSS keyframe animations in globals.css
+- ✅ **Delete Functionality**: Complete item removal system
+  - DELETE endpoint: `/app/api/delete-item/route.ts`
+  - Removes from D1 database and R2 storage (all 3 image variants)
+  - Red trash icon button with confirmation dialog
+  - Clean UX without success popup
+- ✅ **Duplicate Detection**: SHA-256 image hashing to prevent duplicate uploads
+  - Client-side hashing using Web Crypto API
+  - Check BEFORE AI processing to save costs
+  - New endpoint: `/app/api/check-duplicate/route.ts`
+  - User-friendly dialog with item details when duplicate found
+  - Option to proceed with duplicate if desired
+  - Migration: `add-image-hash.sql` with indexed image_hash field
+- **Files Updated**:
+  - `/app/upload/UploadClient.tsx` - Native camera, icons, duplicate checking
+  - `/app/closet/ClosetClient.tsx` - Icons, delete functionality
+  - `/app/globals.css` - Vertical scanning animations
+  - `/app/api/delete-item/route.ts` - NEW
+  - `/app/api/check-duplicate/route.ts` - NEW
+  - `/migrations/add-image-hash.sql` - NEW
+  - `package.json` - Added @lucide/lab dependency
+  - `.claude/rules.md` - Added cf = Cloudflare terminology
 
 **AI Metadata Storage + Detail Modal Added (2025-11-19 04:26 EST)**:
 - ✅ **AI metadata now saved to database** - subcategory, color, brand, tags stored in D1

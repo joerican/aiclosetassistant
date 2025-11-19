@@ -6,6 +6,10 @@
 
 Always use this full path when running bash commands to ensure you're in the correct directory.
 
+## Terminology
+
+**cf = Cloudflare** - When the user mentions "cf", they mean Cloudflare (Pages, Workers, D1, R2, etc.)
+
 ## Always Read Documentation First
 
 **CRITICAL**: Before starting ANY task in this project, you MUST read the PROJECT_DOCUMENTATION.md file located at the root of this repository.
