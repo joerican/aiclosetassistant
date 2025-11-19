@@ -31,6 +31,8 @@ lerna-debug.log*
 # Cloudflare
 .wrangler/
 wrangler.toml.local
+.open-next/
+.dev.vars
 
 # TypeScript
 *.tsbuildinfo

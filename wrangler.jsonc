@@ -1,0 +1,32 @@
+{
+  "name": "aiclosetassistant",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2024-12-30",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER",
+      "service": "aiclosetassistant"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "closet-db",
+      "database_id": "6b5601ee-c870-422c-8818-2d4420f1c6f3"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "CLOSET_IMAGES",
+      "bucket_name": "closet-images"
+    }
+  ],
+  "ai": {
+    "binding": "AI"
+  }
+}

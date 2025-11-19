@@ -9,10 +9,9 @@ const nextConfig = {
       },
     ],
   },
-  experimental: {
-    skipTrailingSlashRedirect: true,
-  },
+  skipTrailingSlashRedirect: true,
   skipMiddlewareUrlNormalize: true,
+  outputFileTracingRoot: __dirname,
 };
 
 module.exports = nextConfig;
