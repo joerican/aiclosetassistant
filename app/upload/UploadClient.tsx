@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { UserButton } from "@clerk/nextjs";
+
 import Link from "next/link";
 import { Category } from "@/types";
 
@@ -132,7 +132,7 @@ export default function UploadPage() {
               >
                 Back to Closet
               </Link>
-              <UserButton afterSignOutUrl="/" />
+              <!-- UserButton removed -->
             </div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { UserButton } from "@clerk/nextjs";
+
 import Link from "next/link";
 import { ClothingItem } from "@/types";
 
@@ -92,7 +92,7 @@ export default function ShufflePage() {
               >
                 Back to Closet
               </Link>
-              <UserButton afterSignOutUrl="/" />
+              <!-- UserButton removed -->
             </div>
           </div>
         </div>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { Category } from "@/types";
 
@@ -44,7 +43,7 @@ export default function ClosetPage() {
               >
                 Outfit Shuffle
               </Link>
-              <UserButton afterSignOutUrl="/" />
+              {/* UserButton temporarily removed */}
             </div>
           </div>
         </div>
