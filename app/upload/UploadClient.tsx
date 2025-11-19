@@ -4,7 +4,6 @@ import { useState, useRef } from "react";
 import { UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { Category } from "@/types";
-import { removeBackground } from "@imgly/background-removal";
 
 export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -81,6 +80,8 @@ export default function UploadPage() {
 
     setIsProcessing(true);
     try {
+      // Dynamically import the background removal library only when needed
+      const { removeBackground } = await import("@imgly/background-removal");
       const blob = await removeBackground(selectedFile);
       const url = URL.createObjectURL(blob);
       setProcessedPreview(url);
