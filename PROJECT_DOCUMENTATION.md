@@ -209,7 +209,7 @@ CREATE TABLE wear_history (
 - **Trigger**: Every `git push` to `main` branch
 - **Process**: GitHub → Cloudflare Pages → Build → Deploy
 - **Build Command**: `npx opennextjs-cloudflare build` (updated 2025-11-19)
-- **Output Directory**: `.open-next/worker` (updated 2025-11-19)
+- **Output Directory**: `.open-next` (updated 2025-11-19)
 - **Build Time**: ~90-120 seconds
 
 ### Manual Deployment
