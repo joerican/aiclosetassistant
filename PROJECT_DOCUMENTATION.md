@@ -1,8 +1,26 @@
 # AI Closet Assistant - Project Documentation
 
-**Last Updated**: 2025-11-19 (evening update)
-**Status**: ✅ LIVE AND WORKING - Database Integration Complete
+**Last Updated**: 2025-11-19 (evening update - OpenNext migration)
+**Status**: ✅ LIVE AND WORKING - Database Integration Complete + OpenNext Migration
 **Production URL**: https://aiclosetassistant.pages.dev
+
+## 🚨 Recent Breaking Changes
+
+**OpenNext Migration (2025-11-19)**:
+- Migrated from deprecated `@cloudflare/next-on-pages` to `@opennextjs/cloudflare`
+- Now using **Node.js runtime** instead of Edge runtime
+- Build output changed from `.vercel/output/static` to `.open-next/worker`
+- All deprecation warnings resolved
+
+## 📐 Development Philosophy
+
+**Always Use Latest Tools**: This is a new project, so we prioritize using the latest stable versions of all tools and dependencies. When we see deprecation warnings or notices about newer versions, we migrate immediately rather than deferring upgrades. This approach:
+- Prevents technical debt from accumulating
+- Takes advantage of new features and performance improvements
+- Avoids breaking changes becoming harder to fix later
+- Keeps the codebase modern and maintainable
+
+**Exception**: We only stick with older versions if the latest version has critical bugs or incompatibilities. Otherwise, latest = best.
 
 ---
 
@@ -19,8 +37,9 @@ A digital wardrobe organizer that lets users:
 ## 🏗️ Architecture
 
 ### Technology Stack
-- **Framework**: Next.js 15 (App Router)
-- **Runtime**: Cloudflare Pages Functions (Edge Runtime)
+- **Framework**: Next.js 15.5.2 (App Router)
+- **Adapter**: OpenNext Cloudflare (@opennextjs/cloudflare v1.13.0)
+- **Runtime**: Cloudflare Pages Functions (Node.js Runtime via OpenNext)
 - **Database**: Cloudflare D1 (SQLite)
 - **Storage**: Cloudflare R2 (Object Storage)
 - **AI**: Cloudflare AI Workers (Background Removal)
@@ -28,9 +47,16 @@ A digital wardrobe organizer that lets users:
 
 ### Key Design Decisions
 
+**Why OpenNext instead of @cloudflare/next-on-pages?**
+- `@cloudflare/next-on-pages` is deprecated (as of 2025)
+- OpenNext is the official Cloudflare-recommended adapter for Next.js
+- Supports Node.js runtime (more APIs available vs Edge runtime)
+- Better Next.js 15 support and ongoing updates
+- No deprecation warnings
+
 **Why Cloudflare Pages (not standalone Workers)?**
 - Automatic GitHub deployment on every push
-- Built-in support for Next.js via `@cloudflare/next-on-pages`
+- Built-in support for Next.js via OpenNext adapter
 - Free tier includes D1, R2, and AI access
 - No separate Worker needed - Pages Functions handle everything
 
@@ -75,7 +101,9 @@ aiclosetassistant/
 │       └── schema.sql             # D1 database schema
 ├── types/
 │   └── index.ts                   # TypeScript interfaces
-├── wrangler.toml                  # Cloudflare configuration
+├── wrangler.jsonc                 # ✅ Cloudflare configuration (OpenNext format)
+├── open-next.config.ts            # ✅ OpenNext adapter configuration
+├── .dev.vars                      # Local development environment variables
 ├── package.json
 ├── next.config.js
 └── tsconfig.json
@@ -180,9 +208,9 @@ CREATE TABLE wear_history (
 ### Automatic Deployment
 - **Trigger**: Every `git push` to `main` branch
 - **Process**: GitHub → Cloudflare Pages → Build → Deploy
-- **Build Command**: `npx @cloudflare/next-on-pages@1`
-- **Output Directory**: `.vercel/output/static`
-- **Build Time**: ~90 seconds
+- **Build Command**: `npx opennextjs-cloudflare build` (updated 2025-11-19)
+- **Output Directory**: `.open-next/worker` (updated 2025-11-19)
+- **Build Time**: ~90-120 seconds
 
 ### Manual Deployment
 ```bash
@@ -392,10 +420,20 @@ Deployment logs available at:
 
 ## 📚 Important Files Reference
 
-### `wrangler.toml`
-- **Purpose**: Cloudflare configuration for local development
-- **Note**: `name = "ai-closet-assistant"` is NOT used by Pages
-- **Used for**: Local development with `wrangler pages dev`
+### `wrangler.jsonc`
+- **Purpose**: Cloudflare configuration for OpenNext adapter
+- **Format**: JSONC (JSON with comments support)
+- **Key settings**:
+  - `main`: ".open-next/worker.js" (OpenNext worker entry point)
+  - `compatibility_date`: "2024-12-30"
+  - `compatibility_flags`: ["nodejs_compat", "global_fetch_strictly_public"]
+  - Bindings for D1, R2, and AI
+- **Used for**: Local preview and production deployment
+
+### `open-next.config.ts`
+- **Purpose**: OpenNext adapter configuration
+- **Runtime**: Node.js runtime with edge converter
+- **Settings**: Dummy cache/queue implementations (can be upgraded later)
 
 ### `next.config.js`
 - Disables image optimization (not supported on edge)
@@ -406,8 +444,11 @@ Deployment logs available at:
 - Not needed without authentication
 
 ### `package.json`
-- Key script: `pages:build` runs `@cloudflare/next-on-pages`
+- **Build script**: `npm run build` - Next.js build
+- **Preview script**: `npm run preview` - OpenNext build + local preview
+- **Deploy script**: `npm run deploy` - OpenNext build + deploy to Cloudflare
 - No Clerk dependencies (removed)
+- Uses `@opennextjs/cloudflare` instead of deprecated `@cloudflare/next-on-pages`
 
 ---
 
