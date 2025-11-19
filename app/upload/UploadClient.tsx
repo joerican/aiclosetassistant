@@ -79,14 +79,28 @@ export default function UploadPage() {
 
     setIsProcessing(true);
     try {
-      // TODO: Implement background removal using Cloudflare AI Workers
-      // For now, just use the original image
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setProcessedPreview(preview);
-      alert("Background removal coming soon! For now, using original image.");
+      // Create form data with the image
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+
+      // Call the background removal API
+      const response = await fetch('/api/remove-background', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to remove background');
+      }
+
+      // Get the processed image as a blob
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setProcessedPreview(url);
     } catch (error) {
       console.error("Error removing background:", error);
-      alert("Failed to remove background. Please try again.");
+      alert(error instanceof Error ? error.message : "Failed to remove background. Please try again.");
     } finally {
       setIsProcessing(false);
     }
