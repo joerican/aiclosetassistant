@@ -12,7 +12,6 @@ const nextConfig = {
   experimental: {
     skipTrailingSlashRedirect: true,
   },
-  // Disable static page generation for Clerk pages
   skipMiddlewareUrlNormalize: true,
 };
 
