@@ -60,70 +60,203 @@ export async function POST(request: Request) {
       console.log('License agreement attempt (prompt format):', e);
     }
 
-    // Use Llama Vision to analyze the clothing item
-    const prompt = `Analyze this clothing/fashion item image and provide the following information in JSON format:
+    // IMPROVED PROMPT: Stricter formatting instructions
+    const prompt = `You are a fashion analysis AI. Analyze this clothing/fashion item image and provide ONLY valid JSON with no additional text before or after.
+
+CRITICAL: Your response must be ONLY the JSON object below, with no other text, explanations, or formatting.
+
 {
   "category": "one of: tops, bottoms, shoes, outerwear, accessories",
   "subcategory": "specific type like t-shirt, jeans, sneakers, etc.",
   "colors": ["primary color", "secondary color if any"],
   "brand": "brand name if visible, otherwise null",
-  "description": "brief description of the item",
-  "tags": ["tag1", "tag2", "tag3"]
+  "description": "brief description of the item (plain text only, no nested JSON)",
+  "tags": ["tag1", "tag2", "tag3"],
+  "material": "fabric/material type (cotton, polyester, leather, denim, etc.)",
+  "pattern": "pattern type (solid, striped, plaid, floral, graphic, etc.)",
+  "style": "style description (casual, formal, business, athletic, vintage, etc.)",
+  "fit": "fit type (slim, regular, oversized, fitted, loose, etc.)",
+  "season": ["season suitability: spring, summer, fall, winter"],
+  "occasion": ["suitable occasions: casual, work, formal, athletic, etc."],
+  "features": ["notable features: pockets, buttons, zippers, hood, collar type, etc."],
+  "condition": "apparent condition (new, good, worn, etc.)",
+  "formality": "formality level (casual, smart casual, business casual, business formal, formal)",
+  "color_details": {
+    "primary": "primary color with details",
+    "secondary": "secondary color if any",
+    "accent": "accent colors if any"
+  },
+  "additional_observations": "any other details, characteristics, or notable aspects you can detect about this item that weren't covered above"
 }
 
-Only respond with valid JSON, no other text.`;
+IMPORTANT:
+- Do NOT nest JSON objects inside string fields
+- Do NOT add periods, extra text, or explanations after the JSON
+- If you cannot determine a field, use null
+- Respond ONLY with the JSON object`;
 
-    const response = await AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: prompt
-            },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${imageToAnalyze.type};base64,${base64Image}`
+    // Helper function to call AI (used for retry logic)
+    const callAI = async () => {
+      return await AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: prompt
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${imageToAnalyze.type};base64,${base64Image}`
+                }
               }
-            }
-          ]
+            ]
+          }
+        ]
+      }) as any;
+    };
+
+    // Helper function to extract nested JSON from description field
+    const extractNestedJSON = (text: string): any | null => {
+      try {
+        // Look for JSON object patterns in the text
+        const jsonMatch = text.match(/\{[\s\S]*"category"[\s\S]*\}/);
+        if (jsonMatch) {
+          // Try to parse the extracted JSON
+          const extracted = JSON.parse(jsonMatch[0]);
+          console.log('Extracted nested JSON from malformed response');
+          return extracted;
         }
-      ]
-    }) as any;
-
-    console.log('AI analysis complete');
-
-    // Extract the response text
-    const analysisText = response.response || response.result?.response || '';
-    console.log('AI raw response:', analysisText);
-
-    // Try to parse JSON from the response
-    let metadata;
-    try {
-      // If response is already an object, use it directly
-      if (typeof analysisText === 'object' && analysisText !== null) {
-        metadata = analysisText;
-        console.log('AI response was already an object');
-      } else {
-        // Remove markdown code blocks if present
-        const cleanText = String(analysisText).replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        metadata = JSON.parse(cleanText);
+      } catch (e) {
+        console.log('Failed to extract nested JSON:', e);
       }
-      console.log('AI parsed metadata:', JSON.stringify(metadata));
-    } catch (parseError) {
-      console.error('Failed to parse AI response as JSON:', analysisText);
-      // Return a default structure if parsing fails
-      metadata = {
-        category: 'tops',
-        subcategory: null,
-        colors: [],
-        brand: null,
-        description: typeof analysisText === 'string' ? analysisText.substring(0, 200) : JSON.stringify(analysisText),
-        tags: []
-      };
+      return null;
+    };
+
+    // Helper function to validate parsed metadata
+    const validateMetadata = (data: any): boolean => {
+      // Check that essential fields exist and are the right type
+      const hasCategory = typeof data.category === 'string' && data.category.length > 0;
+      const hasValidColors = Array.isArray(data.colors);
+      const hasDescription = typeof data.description === 'string';
+
+      // Check that description doesn't contain nested JSON
+      const descriptionHasJSON = hasDescription &&
+        (data.description.includes('{') || data.description.includes('"category"'));
+
+      const isValid = hasCategory && hasValidColors && hasDescription && !descriptionHasJSON;
+
+      if (!isValid) {
+        console.log('Validation failed:', {
+          hasCategory,
+          hasValidColors,
+          hasDescription,
+          descriptionHasJSON
+        });
+      }
+
+      return isValid;
+    };
+
+    // RETRY LOGIC: Try AI call up to 2 times
+    let metadata;
+    let attempt = 0;
+    const maxAttempts = 2;
+
+    while (attempt < maxAttempts) {
+      attempt++;
+      console.log(`AI analysis attempt ${attempt}/${maxAttempts}`);
+
+      const response = await callAI();
+      const analysisText = response.response || response.result?.response || '';
+      console.log(`AI raw response (attempt ${attempt}):`, analysisText);
+
+      try {
+        // If response is already an object, use it directly
+        if (typeof analysisText === 'object' && analysisText !== null) {
+          metadata = analysisText;
+          console.log('AI response was already an object');
+        } else {
+          // Remove markdown code blocks and trailing periods if present
+          let cleanText = String(analysisText)
+            .replace(/```json\n?/g, '')
+            .replace(/```\n?/g, '')
+            .trim();
+
+          // Remove trailing period if present (AI sometimes adds this)
+          if (cleanText.endsWith('.')) {
+            cleanText = cleanText.slice(0, -1);
+          }
+
+          metadata = JSON.parse(cleanText);
+        }
+
+        // VALIDATION: Check if the parsed metadata is valid
+        if (validateMetadata(metadata)) {
+          console.log('AI metadata validated successfully');
+          break; // Success! Exit retry loop
+        } else {
+          // NESTED JSON EXTRACTION: Try to extract nested JSON from description
+          console.log('Validation failed, attempting nested JSON extraction...');
+          const extracted = extractNestedJSON(JSON.stringify(metadata));
+
+          if (extracted && validateMetadata(extracted)) {
+            metadata = extracted;
+            console.log('Successfully extracted and validated nested JSON');
+            break; // Success! Exit retry loop
+          }
+
+          // If this was the last attempt, use what we have
+          if (attempt === maxAttempts) {
+            console.warn('All attempts exhausted, using best available data');
+          } else {
+            console.log('Retrying AI call...');
+            continue; // Retry
+          }
+        }
+
+      } catch (parseError) {
+        console.error(`Parse error on attempt ${attempt}:`, parseError);
+
+        // On last attempt, try nested JSON extraction as last resort
+        if (attempt === maxAttempts) {
+          console.log('Final attempt: trying nested JSON extraction from raw response...');
+          const extracted = extractNestedJSON(String(analysisText));
+
+          if (extracted && validateMetadata(extracted)) {
+            metadata = extracted;
+            console.log('Recovered data using nested JSON extraction');
+            break;
+          }
+
+          // Ultimate fallback: return default structure
+          console.error('All recovery attempts failed, using default structure');
+          metadata = {
+            category: 'tops',
+            subcategory: null,
+            colors: [],
+            brand: null,
+            description: typeof analysisText === 'string' ? analysisText.substring(0, 200) : JSON.stringify(analysisText),
+            tags: [],
+            material: null,
+            pattern: null,
+            style: null,
+            fit: null,
+            season: [],
+            occasion: [],
+            features: [],
+            condition: null,
+            formality: null,
+            color_details: null,
+            additional_observations: 'Failed to parse AI response properly'
+          };
+        }
+      }
     }
+
+    console.log('Final metadata:', JSON.stringify(metadata));
 
     return Response.json({
       success: true,

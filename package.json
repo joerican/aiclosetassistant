@@ -12,6 +12,7 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "dependencies": {
+    "@imgly/background-removal": "^1.7.0",
     "@lucide/lab": "^0.1.2",
     "imghash": "^1.1.0",
     "lucide-react": "^0.554.0",

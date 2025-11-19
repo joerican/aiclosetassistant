@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import VersionBadge from "./components/VersionBadge";
+import DebugButton from "./components/DebugButton";
 
 export const metadata: Metadata = {
   title: "AI Closet Assistant",
@@ -17,6 +18,7 @@ export default function RootLayout({
       <body>
         {children}
         <VersionBadge />
+        <DebugButton />
       </body>
     </html>
   );

@@ -3,13 +3,18 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
-    const originalImage = formData.get('originalImage') as File; // Original from client
-    const processedImage = formData.get('processedImage') as Blob | null; // Already resized/cropped by Cloudflare
+    // Receive pre-processed images from client (all resizing done client-side)
+    const processedImage = formData.get('processedImage') as Blob | null; // 512px WebP
+    const thumbnailImage = formData.get('thumbnailImage') as Blob | null; // 200px WebP
     const category = formData.get('category') as string;
     const userId = formData.get('userId') as string || 'default-user'; // TODO: Replace with actual auth
 
     // Get perceptual hash from client
     const imageHash = formData.get('imageHash') as string;
+
+    // Get AI metadata (full response for storage)
+    const aiMetadataStr = formData.get('aiMetadata') as string || null;
+    const aiRawResponse = aiMetadataStr; // Store the full JSON string
 
     // Get user-editable fields
     const subcategory = formData.get('subcategory') as string || null;
@@ -26,8 +31,8 @@ export async function POST(request: Request) {
 
     console.log('Received fields:', { subcategory, color, brand, size, description, notes, cost, datePurchased, storePurchasedFrom });
 
-    if (!originalImage || !category) {
-      return new Response(JSON.stringify({ error: 'Missing required fields' }), {
+    if (!processedImage || !category) {
+      return new Response(JSON.stringify({ error: 'Missing required fields (processedImage or category)' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -37,9 +42,8 @@ export async function POST(request: Request) {
     const { env } = await getCloudflareContext();
     const R2 = env.CLOSET_IMAGES;
     const DB = env.DB;
-    const IMAGES = env.IMAGES;
 
-    if (!R2 || !DB || !IMAGES) {
+    if (!R2 || !DB) {
       return new Response(JSON.stringify({ error: 'Storage bindings not available' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
@@ -51,59 +55,41 @@ export async function POST(request: Request) {
     const timestamp = Date.now();
 
     console.log('Received perceptual hash from client:', imageHash);
-    console.log('Server-side image processing: resize original to 800px and thumbnail to 200px');
+    console.log('Receiving pre-processed images: 512px processed + 200px thumbnail');
 
-    // Process original image: create both 800px original and 200px thumbnail in one go
-    // Using single IMAGES call to avoid multiple stream consumption issues
-    const originalArrayBuffer = await originalImage.arrayBuffer();
-
-    // STEP 1: Resize original image to 800px WebP
-    const originalResized = await IMAGES
-      .input(originalArrayBuffer)
-      .transform({ width: 800, fit: 'scale-down' })
-      .output({ format: 'image/webp', quality: 85 });
-
-    const originalKey = `original/${itemId}.webp`;
-    const originalResponse = await originalResized.response();
-    await R2.put(originalKey, await originalResponse.arrayBuffer(), {
+    // STEP 1: Upload processed image (512px WebP - background removed & cropped)
+    const processedKey = `processed/${itemId}.webp`;
+    const processedBuffer = await processedImage.arrayBuffer();
+    console.log('Uploading processed image, size:', processedBuffer.byteLength, 'bytes');
+    await R2.put(processedKey, processedBuffer, {
       httpMetadata: {
         contentType: 'image/webp',
       },
     });
 
-    // STEP 2: Create thumbnail (200px) from original image
-    const thumbnailResized = await IMAGES
-      .input(originalArrayBuffer)
-      .transform({ width: 200, fit: 'scale-down' })
-      .output({ format: 'image/webp', quality: 80 });
-
-    const thumbnailKey = `thumbnails/${itemId}.webp`;
-    const thumbnailResponse = await thumbnailResized.response();
-    await R2.put(thumbnailKey, await thumbnailResponse.arrayBuffer(), {
-      httpMetadata: {
-        contentType: 'image/webp',
-      },
-    });
-
-    // STEP 3: Upload processed image if provided (already resized by Cloudflare at 600px PNG)
-    let processedKey = null;
-    if (processedImage) {
-      processedKey = `processed/${itemId}.png`;
-      const processedBuffer = await processedImage.arrayBuffer();
-      await R2.put(processedKey, processedBuffer, {
+    // STEP 2: Upload thumbnail (200px WebP)
+    let thumbnailKey = `thumbnails/${itemId}.webp`;
+    if (thumbnailImage) {
+      const thumbnailBuffer = await thumbnailImage.arrayBuffer();
+      console.log('Uploading thumbnail, size:', thumbnailBuffer.byteLength, 'bytes');
+      await R2.put(thumbnailKey, thumbnailBuffer, {
         httpMetadata: {
-          contentType: 'image/png',
+          contentType: 'image/webp',
         },
       });
+    } else {
+      // Fallback: use processed image as thumbnail if not provided
+      console.log('No thumbnail provided, using processed image');
+      thumbnailKey = processedKey;
     }
 
     // Save to D1 database
     // Use our API route to serve images from R2
-    const originalImageUrl = `/api/images/${originalKey}`;
+    // Note: No original image anymore - processed image IS the main image
     const thumbnailUrl = `/api/images/${thumbnailKey}`;
-    const backgroundRemovedUrl = processedKey
-      ? `/api/images/${processedKey}`
-      : null;
+    const backgroundRemovedUrl = `/api/images/${processedKey}`;
+    // Use processed image as the "original" since we don't store unprocessed originals
+    const originalImageUrl = backgroundRemovedUrl;
 
     console.log('Saving to DB - subcategory:', subcategory, 'color:', color, 'brand:', brand, 'size:', size, 'description:', description, 'notes:', notes, 'cost:', cost);
 
@@ -112,10 +98,10 @@ export async function POST(request: Request) {
         id, user_id, category, subcategory, color, brand, size,
         description, notes,
         original_image_url, thumbnail_url, background_removed_url,
-        image_hash,
+        image_hash, ai_raw_response,
         cost, date_purchased, store_purchased_from,
         favorite, times_worn, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       itemId,
       userId,
@@ -130,6 +116,7 @@ export async function POST(request: Request) {
       thumbnailUrl,
       backgroundRemovedUrl,
       imageHash, // Use perceptual hash from client
+      aiRawResponse, // Store full AI JSON response
       cost,
       datePurchased,
       storePurchasedFrom,

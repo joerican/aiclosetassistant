@@ -35,6 +35,8 @@ export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string>("");
   const [processedPreview, setProcessedPreview] = useState<string>("");
+  const [processedImage512, setProcessedImage512] = useState<Blob | null>(null);
+  const [thumbnailImage200, setThumbnailImage200] = useState<Blob | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -404,7 +406,7 @@ export default function UploadPage() {
 
       try {
         const analysisPromise = analyzeImage(imageFile);
-        const bgRemovalPromise = removeBackgroundServerSide(imageFile);
+        const bgRemovalPromise = removeBackgroundClientSide(imageFile);
         await Promise.all([analysisPromise, bgRemovalPromise]);
 
         setIsAnalyzing(false);
@@ -495,35 +497,101 @@ export default function UploadPage() {
     }
   };
 
-  const removeBackgroundServerSide = async (imageFile: File) => {
+  const removeBackgroundClientSide = async (imageFile: File) => {
+    let imageBlob: Blob | null = null;
+
     try {
-      console.log('Starting server-side background removal with Cloudflare (resize + remove BG + crop)...');
+      console.log('Starting new image processing flow...');
 
-      // Cloudflare Images API will handle:
-      // 1. Resize to 600px
-      // 2. Remove background
-      // 3. Trim/crop transparent pixels
-      const formData = new FormData();
-      formData.append('image', imageFile);
-
-      const response = await fetch('/api/remove-background', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error('Background removal request failed');
+      // Chrome-only memory API (optional)
+      const memoryInfo = (performance as any).memory;
+      if (memoryInfo) {
+        console.log('Memory before processing:', {
+          used: memoryInfo.usedJSHeapSize,
+          total: memoryInfo.totalJSHeapSize,
+          limit: memoryInfo.jsHeapSizeLimit
+        });
       }
 
-      const imageBlob = await response.blob();
-      console.log('Background removal complete (already resized and cropped by Cloudflare)');
+      // Step 1: Resize original to 800px first (reduces memory for BG removal)
+      console.log('Step 1: Resizing to 800px...');
+      const resized800Blob = await resizeImage(imageFile, 800, 0.9, 'image/png');
+      console.log('Resized to 800px, size:', (resized800Blob.size / 1024).toFixed(2), 'KB');
 
-      const url = URL.createObjectURL(imageBlob);
+      // Step 2: Remove background on the 800px image
+      console.log('Step 2: Removing background...');
+      const { removeBackground } = await import('@imgly/background-removal');
+
+      imageBlob = await removeBackground(resized800Blob, {
+        model: 'isnet_quint8',
+        output: {
+          format: 'image/png',
+          quality: 0.9,
+        },
+      });
+
+      console.log('Background removal complete');
+
+      if (memoryInfo) {
+        console.log('Memory after BG removal:', {
+          used: memoryInfo.usedJSHeapSize,
+          total: memoryInfo.totalJSHeapSize,
+          limit: memoryInfo.jsHeapSizeLimit
+        });
+      }
+
+      // Step 3: Crop the transparent image to content bounds
+      console.log('Step 3: Cropping to content bounds...');
+      const croppedBlob = await cropTransparentImage(imageBlob);
+      console.log('Image cropped, size:', (croppedBlob.size / 1024).toFixed(2), 'KB');
+
+      // Clean up the intermediate blob to free memory
+      imageBlob = null;
+
+      // Step 4: Resize cropped image to 512px for storage and AI analysis
+      console.log('Step 4: Creating 512px version for storage...');
+      const image512 = await resizeImage(croppedBlob, 512, 0.85, 'image/webp');
+      console.log('512px version created, size:', (image512.size / 1024).toFixed(2), 'KB');
+      setProcessedImage512(image512);
+
+      // Step 5: Create 200px thumbnail
+      console.log('Step 5: Creating 200px thumbnail...');
+      const thumbnail200 = await resizeImage(croppedBlob, 200, 0.8, 'image/webp');
+      console.log('200px thumbnail created, size:', (thumbnail200.size / 1024).toFixed(2), 'KB');
+      setThumbnailImage200(thumbnail200);
+
+      // Force garbage collection hint (browser may ignore)
+      if (typeof window !== 'undefined' && 'gc' in window) {
+        // @ts-ignore - gc() only available with --expose-gc flag
+        window.gc();
+      }
+
+      if (memoryInfo) {
+        console.log('Memory after cleanup:', {
+          used: memoryInfo.usedJSHeapSize,
+          total: memoryInfo.totalJSHeapSize,
+          limit: memoryInfo.jsHeapSizeLimit
+        });
+      }
+
+      // Revoke old URL to free memory before creating new one
+      if (processedPreview) {
+        URL.revokeObjectURL(processedPreview);
+      }
+
+      // Use 512px version for preview
+      const url = URL.createObjectURL(image512);
       setProcessedPreview(url);
+
+      console.log('Image processing complete! Ready for upload.');
     } catch (error) {
-      console.error("Error removing background:", error);
+      console.error("Error processing image:", error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      alert(`Background removal failed: ${errorMessage}\n\nPlease try again or skip background removal.`);
+
+      // Clean up on error
+      imageBlob = null;
+
+      alert(`Image processing failed: ${errorMessage}\n\nPlease try again.`);
       setIsProcessing(false);
     }
   };
@@ -536,13 +604,20 @@ export default function UploadPage() {
       const imageHash = await hashImageFile(selectedFile);
       console.log('Perceptual hash for upload:', imageHash);
 
-      // Send original image and processed image to server
-      // Server will handle all resizing (original, processed, thumbnail)
+      // Send processed 512px image and 200px thumbnail to server
+      // No original image - all processing done client-side
       const formData = new FormData();
-      formData.append('originalImage', selectedFile);
       formData.append('category', category);
       formData.append('userId', 'default-user');
       formData.append('imageHash', imageHash);
+
+      // Send the processed images (already resized client-side)
+      if (processedImage512) {
+        formData.append('processedImage', processedImage512, 'processed.webp');
+      }
+      if (thumbnailImage200) {
+        formData.append('thumbnailImage', thumbnailImage200, 'thumbnail.webp');
+      }
 
       // Use custom subcategory if "Other" is selected, otherwise use the selected value
       const finalSubcategory = subcategory === "Other" ? customSubcategory : subcategory;
@@ -569,12 +644,6 @@ export default function UploadPage() {
       // Add AI metadata if available
       if (aiMetadata) {
         formData.append('aiMetadata', JSON.stringify(aiMetadata));
-      }
-
-      // Send processed image if available (Cloudflare already resized and cropped it)
-      if (processedPreview) {
-        const processedBlob = await fetch(processedPreview).then(r => r.blob());
-        formData.append('processedImage', processedBlob);
       }
 
       const response = await fetch('/api/upload-item', {

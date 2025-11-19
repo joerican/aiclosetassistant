@@ -501,6 +501,16 @@ export default function ClosetPage() {
                       })}
                     </p>
                   </div>
+
+                  {/* Item ID */}
+                  <div>
+                    <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
+                      Item ID
+                    </label>
+                    <p style={{ color: 'var(--text-primary)' }} className="text-sm font-mono">
+                      {selectedItem.id}
+                    </p>
+                  </div>
                 </div>
               )}
 
