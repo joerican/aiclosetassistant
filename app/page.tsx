@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+export const runtime = 'edge';
+
 export default function Home() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-gradient-to-b from-white to-gray-100 dark:from-gray-900 dark:to-black">
