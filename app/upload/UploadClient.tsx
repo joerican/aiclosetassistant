@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { Category } from "@/types";
 
