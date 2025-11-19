@@ -111,14 +111,36 @@ export default function UploadPage() {
 
     setIsUploading(true);
     try {
-      // TODO: Implement actual upload to R2 and save to D1
-      // For now, just simulate upload
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      alert("Item uploaded successfully!");
+      // Create form data with both original and processed images
+      const formData = new FormData();
+      formData.append('originalImage', selectedFile);
+      formData.append('category', category);
+      formData.append('userId', 'default-user'); // TODO: Replace with actual auth
+
+      // Add processed image if available
+      if (processedPreview) {
+        const processedBlob = await fetch(processedPreview).then(r => r.blob());
+        const processedFile = new File([processedBlob], 'processed.png', { type: 'image/png' });
+        formData.append('processedImage', processedFile);
+      }
+
+      // Upload to R2 and save to D1
+      const response = await fetch('/api/upload-item', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to upload item');
+      }
+
+      const result = await response.json();
+      alert(result.message || "Item uploaded successfully!");
       window.location.href = "/closet";
     } catch (error) {
       console.error("Upload error:", error);
-      alert("Failed to upload. Please try again.");
+      alert(error instanceof Error ? error.message : "Failed to upload. Please try again.");
     } finally {
       setIsUploading(false);
     }

@@ -1,7 +1,7 @@
 # AI Closet Assistant - Project Documentation
 
-**Last Updated**: 2025-11-19
-**Status**: ✅ LIVE AND WORKING
+**Last Updated**: 2025-11-19 (evening update)
+**Status**: ✅ LIVE AND WORKING - Database Integration Complete
 **Production URL**: https://aiclosetassistant.pages.dev
 
 ---
@@ -52,17 +52,21 @@ A digital wardrobe organizer that lets users:
 aiclosetassistant/
 ├── app/
 │   ├── api/
-│   │   └── remove-background/
-│   │       └── route.ts           # Background removal API (Cloudflare AI)
+│   │   ├── remove-background/
+│   │   │   └── route.ts           # Background removal API (Cloudflare AI)
+│   │   ├── upload-item/
+│   │   │   └── route.ts           # ✅ Upload images to R2 + save to D1
+│   │   └── get-items/
+│   │       └── route.ts           # ✅ Fetch items from D1
 │   ├── closet/
 │   │   ├── page.tsx               # Server component wrapper
-│   │   └── ClosetClient.tsx       # Client component (category filtering)
+│   │   └── ClosetClient.tsx       # ✅ Client component (displays real items from D1)
 │   ├── shuffle/
 │   │   ├── page.tsx               # Server component wrapper
-│   │   └── ShuffleClient.tsx      # Client component (slot machine)
+│   │   └── ShuffleClient.tsx      # Client component (slot machine - still mock data)
 │   ├── upload/
 │   │   ├── page.tsx               # Server component wrapper
-│   │   └── UploadClient.tsx       # Client component (camera/upload + BG removal)
+│   │   └── UploadClient.tsx       # ✅ Client component (camera/upload + BG removal + R2 save)
 │   ├── layout.tsx                 # Root layout (no auth provider)
 │   ├── page.tsx                   # Landing page
 │   └── globals.css                # Tailwind styles
@@ -204,26 +208,51 @@ curl -s "https://api.cloudflare.com/client/v4/accounts/73d8f7df9a58eb64c1cc943d0
 - Feature showcase cards
 - Links to Closet and Upload pages
 
-### 2. Upload Page (`/upload`)
+### 2. Upload Page (`/upload`) - ✅ FULLY FUNCTIONAL
 - **Camera capture** - Take photos directly from device camera
 - **File upload** - Upload images from device storage
 - **Background removal** - Uses Cloudflare AI (`@cf/cloudflare/rembg`)
 - **Category selection** - Choose tops, bottoms, shoes, outerwear, accessories
 - **Side-by-side preview** - Original vs. background-removed image
+- **✅ R2 Upload** - Saves both original and processed images to R2 bucket
+- **✅ Database Save** - Stores metadata in D1 `clothing_items` table
 
-**API Endpoint**: `POST /api/remove-background`
+**API Endpoints**:
+
+`POST /api/remove-background`
 - Input: FormData with `image` field
 - Output: PNG image with transparent background
 - Model: `@cf/cloudflare/rembg`
 
-### 3. Closet Page (`/closet`)
-- Category filtering UI
-- Empty state with call-to-action
-- Navigation to upload and shuffle
+`POST /api/upload-item`
+- Input: FormData with `originalImage`, `processedImage` (optional), `category`, `userId`
+- Process:
+  1. Generates unique UUID for item
+  2. Uploads original image to R2 at `original/{id}.{ext}`
+  3. Uploads processed image to R2 at `processed/{id}.png` (if provided)
+  4. Creates thumbnail at `thumbnails/{id}.jpg`
+  5. Saves metadata to D1 `clothing_items` table
+- Output: Success message with itemId
+
+### 3. Closet Page (`/closet`) - ✅ FULLY FUNCTIONAL
+- **✅ Real Data Display** - Fetches items from D1 database
+- **Category filtering** - Filter by all, tops, bottoms, shoes, outerwear, accessories
+- **Grid layout** - Responsive grid showing clothing items
+- **Item cards** - Shows background-removed image, category badge, brand, color, times worn
+- **Loading state** - Shows spinner while fetching
+- **Empty state** - Call-to-action when no items exist
+- **Error handling** - Displays errors with retry button
+
+**API Endpoint**:
+
+`GET /api/get-items?category={category}&userId={userId}`
+- Input: Query params for category filter and user ID
+- Output: JSON array of ClothingItem objects from D1
+- Supports: All categories or specific category filter
 
 ### 4. Shuffle Page (`/shuffle`)
 - Casino-style slot machine interface
-- Mock data for demonstration
+- Mock data for demonstration (TODO: integrate with real items)
 - Animated shuffling effect
 - Save outfit functionality (placeholder)
 
@@ -233,52 +262,62 @@ curl -s "https://api.cloudflare.com/client/v4/accounts/73d8f7df9a58eb64c1cc943d0
 
 ### Next Steps (Priority Order)
 
-#### 1. Save Items to Database
-**File**: `app/upload/UploadClient.tsx` (handleUpload function)
-**What to do**:
-- Upload original + background-removed images to R2
-- Generate unique IDs for images
-- Save metadata to D1 `clothing_items` table
-- Return success/failure to user
+#### ~~1. Save Items to Database~~ ✅ COMPLETED
+**Status**: ✅ Completed on 2025-11-19
+**What was done**:
+- Created `app/api/upload-item/route.ts` API endpoint
+- Updated `app/upload/UploadClient.tsx` to call API
+- Uploads both original and processed images to R2
+- Generates unique UUIDs for each item
+- Saves complete metadata to D1 `clothing_items` table
+- Handles errors gracefully with user feedback
 
-**Code Location**: Line ~109-111
-```typescript
-const handleUpload = async () => {
-  if (!selectedFile || !category) return;
-  setIsUploading(true);
-  try {
-    // TODO: Implement actual upload to R2 and save to D1
-    // 1. Upload original image to R2: CLOSET_IMAGES/original/{id}.png
-    // 2. Upload processed image to R2: CLOSET_IMAGES/processed/{id}.png
-    // 3. Create thumbnails (optional)
-    // 4. Save to D1 clothing_items table
-  }
-}
-```
+#### ~~2. Display Items in Closet~~ ✅ COMPLETED
+**Status**: ✅ Completed on 2025-11-19
+**What was done**:
+- Created `app/api/get-items/route.ts` API endpoint
+- Updated `app/closet/ClosetClient.tsx` to fetch and display real items
+- Implemented category filtering with live data
+- Added loading, error, and empty states
+- Responsive grid layout with item cards
+- Shows background-removed images, category badges, brand, color, wear count
 
-#### 2. Display Items in Closet
-**File**: `app/closet/ClosetClient.tsx`
-**What to do**:
-- Fetch items from D1 based on selected category
-- Display in grid layout
-- Show thumbnails with category badges
-- Add click to view details
-
-#### 3. Real Shuffle with User Items
+#### 3. Real Shuffle with User Items (NEXT PRIORITY)
 **File**: `app/shuffle/ShuffleClient.tsx`
 **What to do**:
 - Replace mock data with real items from D1
-- Fetch user's clothing items by category
-- Randomly select one from each category
-- Save outfit combinations to `outfits` table
+- Fetch user's clothing items by category using `/api/get-items`
+- Randomly select one item from each category
+- Display selected items in slot machine interface
+- Add "Save Outfit" functionality to save combinations to `outfits` table
+- Create new API endpoint: `POST /api/save-outfit`
 
-#### 4. Add Authentication
+**Estimated complexity**: Medium - reuse existing `/api/get-items` endpoint, add outfit save logic
+
+#### 4. R2 Public URL Configuration
+**What to do**:
+- Enable R2 public access or custom domain
+- Update image URLs in `app/api/upload-item/route.ts` to use proper R2 URLs
+- Currently using placeholder: `https://closet-images.YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/`
+- Need to replace with actual R2 public bucket URL or set up Cloudflare domain
+
+**Note**: Images are being saved to R2 but URLs need updating for public access
+
+#### 5. Add Item Details View
+**What to do**:
+- Create modal or dedicated page to view item details
+- Allow editing metadata (brand, color, tags, etc.)
+- Add delete functionality
+- Track wear history
+
+#### 6. Add Authentication
 **Options**:
 - **Auth.js (NextAuth)** - Better Cloudflare Pages support
 - **Cloudflare Access** - Built-in Cloudflare auth
 - **Custom JWT** - Roll your own with D1
 
 **Note**: Clerk doesn't work with Cloudflare Pages edge runtime
+**Current**: Using hardcoded `userId: 'default-user'` throughout app
 
 ---
 
