@@ -1,10 +1,12 @@
 # AI Closet Assistant - Project Documentation
 
-**Last Updated**: 2025-11-19 01:11 EST (Zero deprecation warnings achieved)
+**Last Updated**: 2025-11-19 01:13 EST (Added .cfignore to prevent doc deploys)
 **Status**: ✅ LIVE AND WORKING - Zero Warnings, Latest Everything
 **Production URL**: https://aiclosetassistant.pages.dev
 
 > **📝 IMPORTANT**: Always read and update this documentation after making changes. This file is the single source of truth for the project's current state, decisions made, and ongoing work.
+>
+> **Note**: Documentation changes (*.md files) are ignored by Cloudflare Pages via `.cfignore` and won't trigger deployments.
 
 ## 🚨 Recent Breaking Changes
 
@@ -136,6 +138,7 @@ aiclosetassistant/
 ├── wrangler.jsonc                 # ✅ Cloudflare configuration (OpenNext format)
 ├── open-next.config.ts            # ✅ OpenNext adapter configuration
 ├── .dev.vars                      # Local development environment variables
+├── .cfignore                      # ✅ Files to ignore for Cloudflare deployments
 ├── package.json
 ├── next.config.js
 └── tsconfig.json
@@ -466,6 +469,12 @@ Deployment logs available at:
 - **Purpose**: OpenNext adapter configuration
 - **Runtime**: Node.js runtime with edge converter
 - **Settings**: Dummy cache/queue implementations (can be upgraded later)
+
+### `.cfignore`
+- **Purpose**: Tells Cloudflare Pages which files to ignore when triggering deployments
+- **Why**: Documentation changes shouldn't trigger full rebuilds
+- **Ignores**: All .md files, PROJECT_DOCUMENTATION.md, dev files, local env files
+- **Benefit**: Faster iteration on docs without wasting build minutes
 
 ### `next.config.js`
 - Disables image optimization (not supported on edge)

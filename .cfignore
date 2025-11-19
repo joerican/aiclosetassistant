@@ -1,0 +1,25 @@
+# Cloudflare Pages ignore file
+# Files matching these patterns won't trigger deployments
+
+# Documentation
+PROJECT_DOCUMENTATION.md
+*.md
+docs/
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local environment
+.env.local
+.dev.vars
+
+# Git
+.git/
+.gitignore
+
+# Tests (optional - remove if you want tests to trigger deploys)
+# **/*.test.ts
+# **/*.spec.ts
