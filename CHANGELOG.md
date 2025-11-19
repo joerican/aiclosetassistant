@@ -4,7 +4,26 @@ All notable changes to the AI Closet Assistant project will be documented in thi
 
 ## [Unreleased]
 
-### Added - 2025-01-19 (Latest Update: Native Camera Integration & Icon Updates)
+### Added - 2025-11-19 (Latest Update: Fixed Out-of-Memory Issues)
+
+#### Bug Fixes
+- **Reverted to Server-Side Background Removal**: Fixed out-of-memory errors on mobile devices
+  - Client-side `@imgly/background-removal` library was too heavy for mobile browsers
+  - Switched back to Cloudflare Images API for background removal (server-side)
+  - Removed 23 packages from bundle (~800KB reduction)
+  - Still maintains tight cropping of transparent images on client
+  - More reliable and faster on mobile devices
+
+#### Performance Optimization
+- **Reduced Image Dimensions for Mobile-First Display**: Optimized all image sizes for actual display needs (max 4" × 4" on screen)
+  - Original images: 1200px → 800px (33% reduction)
+  - Processed images: 800px → 600px (25% reduction)
+  - Thumbnails: 300px → 200px (33% reduction)
+  - Results in ~50% reduction in file size while maintaining crisp quality
+  - Benefits: Faster uploads, less bandwidth usage
+  - Still looks excellent on all mobile screens and high-DPI displays
+
+### Added - 2025-01-19 (Previous Update: Native Camera Integration & Icon Updates)
 
 #### Upload Experience Improvements
 - **Native Camera Integration**: Replaced WebRTC camera with native camera picker using HTML5 `capture="environment"` attribute
@@ -166,10 +185,10 @@ All notable changes to the AI Closet Assistant project will be documented in thi
 
 ### Performance
 - Parallel processing of AI analysis and background removal reduces perceived wait time
-- Optimized image handling with Cloudflare Images API (WebP conversion, automatic resizing)
-  - Original images: max 1200px width, 85% quality
-  - Processed images: max 800px width, 90% quality
-  - Thumbnails: 300px width, 80% quality
+- Optimized image handling with client-side processing (WebP conversion, resizing)
+  - Original images: max 800px width, 85% quality (UPDATED 2025-11-19)
+  - Processed images: max 600px width, 90% quality (UPDATED 2025-11-19)
+  - Thumbnails: 200px width, 80% quality (UPDATED 2025-11-19)
 
 ## [Previous] - Before 2025-01-19
 

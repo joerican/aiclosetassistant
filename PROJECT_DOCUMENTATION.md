@@ -1,6 +1,6 @@
 # AI Closet Assistant - Project Documentation
 
-**Last Updated**: 2025-11-19 06:37 EST (✅ Native Camera + Icons + Delete/Duplicate)
+**Last Updated**: 2025-11-19 09:04 EST (✅ Fixed OOM + Optimized Images)
 **Status**: ✅ LIVE AND WORKING - Zero Warnings, Latest Everything
 **⚠️ LEGAL TODO**: Must add user license agreement before public launch (see docs/legal/llama-license-requirements.md)
 **Production URL**: https://aiclosetassistant.com
@@ -14,6 +14,30 @@
 > **Terminology**: cf = Cloudflare (Pages, Workers, D1, R2, etc.)
 
 ## 🚨 Recent Breaking Changes
+
+**Fixed Out-of-Memory Issues + Optimized Image Sizes (2025-11-19 09:04 EST)**:
+- ✅ **Reverted to Server-Side Background Removal**: Fixed OOM errors on mobile
+  - Client-side `@imgly/background-removal` library was too heavy (~800KB + AI models)
+  - Switched back to Cloudflare Images API for background removal
+  - Removed 23 npm packages from bundle
+  - Bundle reduced from 9587.90 KiB to **8810.82 KiB** (777KB smaller!)
+  - Still maintains client-side tight cropping after receiving transparent PNG
+- ✅ **Optimized Image Dimensions**: Mobile-first sizing for 4"×4" max display
+  - Original images: 1200px → 800px (33% reduction)
+  - Processed images: 800px → 600px (25% reduction)
+  - Thumbnails: 300px → 200px (33% reduction)
+  - Results in ~50% file size reduction while maintaining crisp quality
+  - Benefits: Faster uploads, less bandwidth, no OOM errors
+- ✅ **Clean Build Process Documented**: Must use clean rebuild for updates
+  - **IMPORTANT**: Use `npx opennextjs-cloudflare build` to include new code changes
+  - Regular `npm run build` only builds Next.js, not OpenNext artifacts
+  - Build timestamp shown in bottom-right corner (VersionBadge component)
+  - See "Quick Start Commands" section for proper deployment workflow
+- **Files Updated**:
+  - `/app/upload/UploadClient.tsx` - Reverted to server-side background removal, optimized resize dimensions
+  - `/app/api/upload-item/route.ts` - Updated comments for new image sizes
+  - `package.json` - Removed @imgly/background-removal
+  - `CHANGELOG.md` - Documented both changes
 
 **Native Camera Integration + Icon System + Delete/Duplicate Features (2025-11-19 06:37 EST)**:
 - ✅ **Native Camera Picker**: Replaced WebRTC with HTML5 `capture="environment"` attribute
@@ -409,29 +433,41 @@ OpenNext deploys to **Cloudflare Workers** only. Cloudflare Pages project has be
 
 ### How to Deploy
 
-**Use this command to deploy:**
+**⚠️ IMPORTANT: Clean Build Required for Code Changes**
+
+When you make code changes (especially to client-side files like `UploadClient.tsx`), you MUST do a **clean rebuild** to ensure the changes are included:
 
 ```bash
 cd "/Users/jorge/Code Projects/aiclosetassistant"
+
+# Clean build (removes cached artifacts)
+rm -rf .next .open-next
+
+# Build and deploy with new timestamp
 npm run deploy
 ```
 
 **What it does**:
-- Sets `NEXT_PUBLIC_BUILD_TIME` with current timestamp for version badge
-- Builds Next.js app with OpenNext adapter
-- Uploads worker code to Cloudflare
-- Binds D1, R2, and AI resources
-- Makes site live at the production URL
-- Version badge (bottom-right corner) shows format: `buildYYYYMMDD-hhmmss`
+1. Sets `NEXT_PUBLIC_BUILD_TIME` with current timestamp for version badge
+2. Builds Next.js app (creates `.next/` folder)
+3. Runs OpenNext adapter (creates `.open-next/` folder with worker code)
+4. Uploads worker bundle to Cloudflare
+5. Binds D1, R2, and AI resources
+6. Makes site live at production URL
+7. Version badge (bottom-right corner) shows: `buildYYYYMMDD-hhmmss`
 
 **Deployment Status**: ✅ Working perfectly
 
-**Manual alternative (not recommended)**:
+**Why clean build is needed**:
+- Next.js caches compiled code in `.next/`
+- OpenNext caches worker artifacts in `.open-next/`
+- Without cleaning, old code may be deployed even after changes
+- The bundle size should change when packages are added/removed (e.g., 9587KB → 8810KB)
+
+**Quick deploy (only for documentation/config changes)**:
 ```bash
-npm run build  # Only if you need to test build locally
-npx opennextjs-cloudflare deploy
+npm run deploy  # Uses cached build if no code changes
 ```
-Note: This won't update the version badge properly. Always use `npm run deploy` instead.
 
 ### Alternative Deployment Options for Future
 

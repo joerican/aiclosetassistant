@@ -133,11 +133,219 @@ export default function UploadPage() {
     }
   };
 
+  // Simple perceptual hash (dHash - Difference Hash)
+  // This detects visual similarity regardless of file format/metadata/compression
   const hashImageFile = async (file: File): Promise<string> => {
-    const arrayBuffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      img.onload = () => {
+        // Resize to 9x8 for dHash algorithm (simple and effective)
+        canvas.width = 9;
+        canvas.height = 8;
+
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+
+        // Draw image resized to 9x8
+        ctx.drawImage(img, 0, 0, 9, 8);
+
+        // Get pixel data
+        const imageData = ctx.getImageData(0, 0, 9, 8);
+        const pixels = imageData.data;
+
+        // Convert to grayscale and compute dHash
+        const grayscale: number[] = [];
+        for (let i = 0; i < pixels.length; i += 4) {
+          // Grayscale = 0.299*R + 0.587*G + 0.114*B
+          const gray = Math.round(
+            pixels[i] * 0.299 +
+            pixels[i + 1] * 0.587 +
+            pixels[i + 2] * 0.114
+          );
+          grayscale.push(gray);
+        }
+
+        // Compute dHash: compare each pixel to the one on its right
+        let hash = '';
+        for (let row = 0; row < 8; row++) {
+          for (let col = 0; col < 8; col++) {
+            const index = row * 9 + col;
+            const left = grayscale[index];
+            const right = grayscale[index + 1];
+            // If left < right, append '1', else append '0'
+            hash += left < right ? '1' : '0';
+          }
+        }
+
+        // Convert binary string to hex for easier storage
+        let hexHash = '';
+        for (let i = 0; i < hash.length; i += 4) {
+          const nibble = hash.substring(i, i + 4);
+          hexHash += parseInt(nibble, 2).toString(16);
+        }
+
+        URL.revokeObjectURL(img.src);
+        resolve(hexHash);
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src);
+        reject(new Error('Failed to load image'));
+      };
+
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  // Tightly crop transparent PNG to content bounds
+  const cropTransparentImage = async (imageBlob: Blob): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      img.onload = () => {
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+
+        // Draw image to canvas
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+
+        // Get image data to find bounds
+        const imageData = ctx.getImageData(0, 0, img.width, img.height);
+        const pixels = imageData.data;
+
+        let minX = img.width;
+        let minY = img.height;
+        let maxX = 0;
+        let maxY = 0;
+
+        // Scan all pixels to find bounds of non-transparent pixels
+        for (let y = 0; y < img.height; y++) {
+          for (let x = 0; x < img.width; x++) {
+            const alpha = pixels[(y * img.width + x) * 4 + 3];
+            if (alpha > 10) { // Pixel is not fully transparent (threshold to handle anti-aliasing)
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+          }
+        }
+
+        // Add small padding (5px on each side)
+        const padding = 5;
+        minX = Math.max(0, minX - padding);
+        minY = Math.max(0, minY - padding);
+        maxX = Math.min(img.width - 1, maxX + padding);
+        maxY = Math.min(img.height - 1, maxY + padding);
+
+        const cropWidth = maxX - minX + 1;
+        const cropHeight = maxY - minY + 1;
+
+        console.log('Cropping from', img.width, 'x', img.height, 'to', cropWidth, 'x', cropHeight);
+
+        // Create new canvas with cropped dimensions
+        const croppedCanvas = document.createElement('canvas');
+        const croppedCtx = croppedCanvas.getContext('2d');
+
+        if (!croppedCtx) {
+          reject(new Error('Could not get cropped canvas context'));
+          return;
+        }
+
+        croppedCanvas.width = cropWidth;
+        croppedCanvas.height = cropHeight;
+
+        // Draw cropped region
+        croppedCtx.drawImage(
+          canvas,
+          minX, minY, cropWidth, cropHeight,
+          0, 0, cropWidth, cropHeight
+        );
+
+        // Convert to blob
+        croppedCanvas.toBlob((blob) => {
+          URL.revokeObjectURL(img.src);
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Failed to create cropped blob'));
+          }
+        }, 'image/png');
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src);
+        reject(new Error('Failed to load image for cropping'));
+      };
+
+      img.src = URL.createObjectURL(imageBlob);
+    });
+  };
+
+  // Resize image to specified max width while maintaining aspect ratio
+  const resizeImage = async (
+    imageBlob: Blob,
+    maxWidth: number,
+    quality: number = 0.9,
+    format: 'image/jpeg' | 'image/png' | 'image/webp' = 'image/webp'
+  ): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      img.onload = () => {
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+
+        // Calculate new dimensions
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        console.log(`Resizing from ${img.width}x${img.height} to ${width}x${height}`);
+
+        // Set canvas size and draw resized image
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Convert to blob
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(img.src);
+          if (blob) {
+            console.log(`Resized to ${format}, size: ${(blob.size / 1024).toFixed(2)}KB`);
+            resolve(blob);
+          } else {
+            reject(new Error('Failed to create resized blob'));
+          }
+        }, format, quality);
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src);
+        reject(new Error('Failed to load image for resizing'));
+      };
+
+      img.src = URL.createObjectURL(imageBlob);
+    });
   };
 
   const checkDuplicate = async (hash: string): Promise<{ duplicate: boolean; existingItem?: any }> => {
@@ -158,22 +366,68 @@ export default function UploadPage() {
   };
 
   const analyzeAndProcessImage = async (imageFile: File) => {
-    setIsAnalyzing(true);
-    setIsProcessing(true);
-
     try {
-      // Run AI analysis and background removal in parallel
-      const analysisPromise = analyzeImage(imageFile);
-      const bgRemovalPromise = removeBackground(imageFile);
-      await Promise.all([analysisPromise, bgRemovalPromise]);
-      setIsAnalyzing(false);
-      setIsProcessing(false);
-      setShowConfirmation(true);
+      // Step 1: Hash the file FIRST before any processing
+      console.log('Hashing file to check for duplicates...');
+      const imageHash = await hashImageFile(imageFile);
+      console.log('File hash:', imageHash);
+
+      // Step 2: Check if this hash already exists in the database
+      console.log('Checking for duplicates...');
+      const duplicateResult = await checkDuplicate(imageHash);
+      console.log('Duplicate check result:', duplicateResult);
+
+      if (duplicateResult.duplicate && duplicateResult.existingItem) {
+        const itemInfo = duplicateResult.existingItem;
+        const itemDescription = [
+          itemInfo.subcategory,
+          itemInfo.color,
+          itemInfo.brand
+        ].filter(Boolean).join(', ') || 'an item';
+
+        const shouldContinue = confirm(
+          `You've already uploaded ${itemDescription} to your closet.\n\nDo you want to upload it again as a duplicate?`
+        );
+
+        if (!shouldContinue) {
+          // User declined - reset and return to upload
+          setSelectedFile(null);
+          setPreview("");
+          return;
+        }
+        // User wants to upload anyway - continue with processing
+      }
+
+      // Step 3: No duplicate (or user wants duplicate) - proceed with processing
+      setIsAnalyzing(true);
+      setIsProcessing(true);
+
+      try {
+        const analysisPromise = analyzeImage(imageFile);
+        const bgRemovalPromise = removeBackgroundServerSide(imageFile);
+        await Promise.all([analysisPromise, bgRemovalPromise]);
+
+        setIsAnalyzing(false);
+        setIsProcessing(false);
+        setShowConfirmation(true);
+      } catch (processingError) {
+        console.error('Error during image processing:', processingError);
+        const errorMessage = processingError instanceof Error ? processingError.message : 'Unknown error';
+        alert(`Processing failed: ${errorMessage}\n\nPlease try uploading a smaller image or try again.`);
+        setIsAnalyzing(false);
+        setIsProcessing(false);
+        // Reset to allow retry
+        setSelectedFile(null);
+        setPreview("");
+      }
     } catch (error) {
-      console.error('Error during image processing:', error);
+      console.error('Error during image analysis:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert(`An error occurred: ${errorMessage}\n\nPlease try again.`);
       setIsAnalyzing(false);
       setIsProcessing(false);
-      alert('Failed to process image. Please try again.');
+      setSelectedFile(null);
+      setPreview("");
     }
   };
 
@@ -241,23 +495,36 @@ export default function UploadPage() {
     }
   };
 
-  const removeBackground = async (imageFile: File) => {
+  const removeBackgroundServerSide = async (imageFile: File) => {
     try {
+      console.log('Starting server-side background removal with Cloudflare (resize + remove BG + crop)...');
+
+      // Cloudflare Images API will handle:
+      // 1. Resize to 600px
+      // 2. Remove background
+      // 3. Trim/crop transparent pixels
       const formData = new FormData();
       formData.append('image', imageFile);
+
       const response = await fetch('/api/remove-background', {
         method: 'POST',
         body: formData,
       });
+
       if (!response.ok) {
-        console.error('Background removal failed');
-        return;
+        throw new Error('Background removal request failed');
       }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
+
+      const imageBlob = await response.blob();
+      console.log('Background removal complete (already resized and cropped by Cloudflare)');
+
+      const url = URL.createObjectURL(imageBlob);
       setProcessedPreview(url);
     } catch (error) {
       console.error("Error removing background:", error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Background removal failed: ${errorMessage}\n\nPlease try again or skip background removal.`);
+      setIsProcessing(false);
     }
   };
 
@@ -265,10 +532,17 @@ export default function UploadPage() {
     if (!selectedFile || !category) return;
     setIsUploading(true);
     try {
+      // Compute perceptual hash for the image
+      const imageHash = await hashImageFile(selectedFile);
+      console.log('Perceptual hash for upload:', imageHash);
+
+      // Send original image and processed image to server
+      // Server will handle all resizing (original, processed, thumbnail)
       const formData = new FormData();
       formData.append('originalImage', selectedFile);
       formData.append('category', category);
       formData.append('userId', 'default-user');
+      formData.append('imageHash', imageHash);
 
       // Use custom subcategory if "Other" is selected, otherwise use the selected value
       const finalSubcategory = subcategory === "Other" ? customSubcategory : subcategory;
@@ -297,10 +571,10 @@ export default function UploadPage() {
         formData.append('aiMetadata', JSON.stringify(aiMetadata));
       }
 
+      // Send processed image if available (Cloudflare already resized and cropped it)
       if (processedPreview) {
         const processedBlob = await fetch(processedPreview).then(r => r.blob());
-        const processedFile = new File([processedBlob], 'processed.png', { type: 'image/png' });
-        formData.append('processedImage', processedFile);
+        formData.append('processedImage', processedBlob);
       }
 
       const response = await fetch('/api/upload-item', {
@@ -331,7 +605,10 @@ export default function UploadPage() {
       window.location.href = "/closet";
     } catch (error) {
       console.error("Upload error:", error);
-      alert(error instanceof Error ? error.message : "Failed to upload. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorDetails = error instanceof Error ? error.stack : '';
+      alert(`Upload failed: ${errorMessage}\n\nPlease check your internet connection and try again.\n\nError details logged to console.`);
+      console.error('Full error details:', errorDetails);
     } finally {
       setIsUploading(false);
     }
@@ -410,7 +687,7 @@ export default function UploadPage() {
                   Upload from Device
                 </button>
                 <p style={{ color: 'var(--text-secondary)' }} className="text-sm mt-3">
-                  Choose a photo from your device
+                  Choose from photo library
                 </p>
               </div>
             </div>
