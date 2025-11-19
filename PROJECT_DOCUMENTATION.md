@@ -30,13 +30,26 @@
 
 ## 📐 Development Philosophy
 
-**Always Use Latest Tools**: This is a new project, so we prioritize using the latest stable versions of all tools and dependencies. When we see deprecation warnings or notices about newer versions, we migrate immediately rather than deferring upgrades. This approach:
+### Documentation First
+**ALWAYS update PROJECT_DOCUMENTATION.md when making changes**. This document is the single source of truth for:
+- Current state of the project
+- Decisions made and why
+- Breaking changes and migrations
+- Next steps and priorities
+- Lessons learned
+
+Every code change, dependency update, or architectural decision MUST be documented here with timestamps. This ensures continuity between sessions and prevents knowledge loss.
+
+### Always Use Latest Tools
+This is a new project, so we prioritize using the latest stable versions of all tools and dependencies. When we see deprecation warnings or notices about newer versions, we migrate immediately rather than deferring upgrades. This approach:
 - Prevents technical debt from accumulating
 - Takes advantage of new features and performance improvements
 - Avoids breaking changes becoming harder to fix later
 - Keeps the codebase modern and maintainable
 
 **Exception**: We only stick with older versions if the latest version has critical bugs or incompatibilities. Otherwise, latest = best.
+
+**Tools for fixing transitive dependencies**: Use npm `overrides` in package.json to force updates to nested dependencies that show deprecation warnings.
 
 ---
 
