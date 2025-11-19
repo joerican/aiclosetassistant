@@ -23,11 +23,15 @@
     "@types/react": "^19.2.6",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.0.1",
+    "cloudflare": "^5.2.0",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.0.3",
     "postcss": "^8",
     "tailwindcss": "^4.1.17",
     "typescript": "^5",
     "wrangler": "^4.49.0"
+  },
+  "overrides": {
+    "formdata-node": "^6.0.3"
   }
 }

@@ -1,16 +1,24 @@
 # AI Closet Assistant - Project Documentation
 
-**Last Updated**: 2025-11-19 01:05 EST (All dependencies upgraded to latest)
-**Status**: ✅ LIVE AND WORKING - Latest Versions of Everything
+**Last Updated**: 2025-11-19 01:11 EST (Zero deprecation warnings achieved)
+**Status**: ✅ LIVE AND WORKING - Zero Warnings, Latest Everything
 **Production URL**: https://aiclosetassistant.pages.dev
 
+> **📝 IMPORTANT**: Always read and update this documentation after making changes. This file is the single source of truth for the project's current state, decisions made, and ongoing work.
+
 ## 🚨 Recent Breaking Changes
+
+**Final Transitive Dependency Fix (2025-11-19 01:11 EST)**:
+- Added npm overrides for `formdata-node@^6.0.3` to eliminate last deprecation warning
+- **Result**: ZERO deprecation warnings in build
+- Used npm overrides feature to force latest version of nested dependency
 
 **Dependency Upgrades (2025-11-19 01:05 EST)**:
 - **Next.js**: 15.5.2 → 16.0.3
 - **React**: 18.3.1 → 19.2.0
 - **ESLint**: 8.57.1 → 9.39.1
 - **Tailwind CSS**: 3.4.18 → 4.1.17
+- **Cloudflare SDK**: Updated to 5.2.0
 - All TypeScript types updated to latest
 - Tailwind config migrated to v4 format (removed tailwind.config.ts, updated CSS imports)
 
@@ -458,6 +466,8 @@ Deployment logs available at:
 - **Build script**: `npm run build` - Next.js build
 - **Preview script**: `npm run preview` - OpenNext build + local preview
 - **Deploy script**: `npm run deploy` - OpenNext build + deploy to Cloudflare
+- **Overrides section**: Forces latest versions of transitive dependencies
+  - `formdata-node@^6.0.3` - Eliminates node-domexception deprecation warning
 - No Clerk dependencies (removed)
 - Uses `@opennextjs/cloudflare` instead of deprecated `@cloudflare/next-on-pages`
 
