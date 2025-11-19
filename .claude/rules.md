@@ -22,10 +22,11 @@ This file contains:
 **Path**: `/Users/jorge/Code Projects/aiclosetassistant/PROJECT_DOCUMENTATION.md`
 
 After completing ANY task, you MUST update the PROJECT_DOCUMENTATION.md file with:
-- Timestamp of the change
+- **Accurate timestamp** - Use `date +"%Y-%m-%d %H:%M %Z"` command (NEVER guess!)
 - What was changed and why
 - Any new issues discovered
 - Status of the change (deployed, testing, etc.)
+- Update BOTH the header "Last Updated" AND add entry to "Recent Breaking Changes"
 
 ## Development Philosophy
 

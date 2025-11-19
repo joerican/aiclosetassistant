@@ -13,29 +13,31 @@ export async function POST(request: Request) {
     }
 
     const { env } = await getCloudflareContext();
-    const AI = env.AI;
+    const IMAGES = env.IMAGES;
 
-    if (!AI) {
-      return new Response(JSON.stringify({ error: 'AI binding not available' }), {
+    if (!IMAGES) {
+      return new Response(JSON.stringify({ error: 'Images binding not available' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    // Convert image to array buffer
-    const imageBuffer = await image.arrayBuffer();
+    console.log('Processing image with Cloudflare Images API, size:', image.size);
 
-    // Use Cloudflare AI to remove background with @cf/cloudflare/rembg model
-    const response = await AI.run('@cf/cloudflare/rembg', {
-      image: Array.from(new Uint8Array(imageBuffer)),
-    });
+    // Use Cloudflare Images API to remove background
+    // BiRefNet model via segment=foreground
+    // Note: input() requires a ReadableStream, not ArrayBuffer
+    const imageStream = image.stream();
 
-    // The response is already a PNG with transparent background
-    return new Response(response, {
-      headers: {
-        'Content-Type': 'image/png',
-      },
-    });
+    const result = await IMAGES
+      .input(imageStream)
+      .transform({ segment: 'foreground' })
+      .output({ format: 'image/png' });
+
+    console.log('Background removal complete');
+
+    // Return the processed image with transparent background
+    return result.response();
   } catch (error) {
     console.error('Background removal error:', error);
     return new Response(

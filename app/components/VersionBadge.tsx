@@ -20,7 +20,7 @@ export default function VersionBadge() {
   const version = formatBuildVersion(buildTime);
 
   return (
-    <div className="fixed bottom-2 right-2 text-xs text-gray-400 bg-gray-900/50 px-2 py-1 rounded backdrop-blur-sm z-50 font-mono">
+    <div className="fixed bottom-2 right-2 text-xs text-white bg-gray-900/50 px-2 py-1 rounded backdrop-blur-sm z-50 font-mono">
       {version}
     </div>
   );

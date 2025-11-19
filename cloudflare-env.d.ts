@@ -10,6 +10,9 @@ interface CloudflareEnv {
   // AI binding
   AI: Ai;
 
+  // Images binding (for background removal, resizing, etc.)
+  IMAGES: any; // Cloudflare Images API binding
+
   // Worker binding (for self-reference)
   WORKER: Fetcher;
 

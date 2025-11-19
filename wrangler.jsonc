@@ -30,6 +30,9 @@
   "ai": {
     "binding": "AI"
   },
+  "images": {
+    "binding": "IMAGES"
+  },
   "observability": {
     "logs": {
       "enabled": true,

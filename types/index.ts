@@ -16,6 +16,9 @@ export interface ClothingItem {
   subcategory?: string;
   color?: string;
   brand?: string;
+  size?: string;
+  description?: string;
+  notes?: string;
   season?: Season;
   original_image_url: string;
   thumbnail_url: string;
@@ -24,6 +27,9 @@ export interface ClothingItem {
   favorite: boolean;
   times_worn: number;
   last_worn_date?: number;
+  cost?: number;
+  date_purchased?: number;
+  store_purchased_from?: string;
   created_at: number;
   updated_at: number;
 }

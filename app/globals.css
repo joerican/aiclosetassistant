@@ -1,14 +1,53 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Centralized Theme Colors - Edit lib/theme.ts to change globally */
+
+  /* Backgrounds */
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #FAFAFA;
+
+  /* Accents - Gold */
+  --accent-primary: #D4AF37;
+  --accent-hover: #C5A028;
+  --accent-dark: #B8941F;
+  --accent-light: #F5E6D3;
+
+  /* Text Colors */
+  --text-primary: #2D2D2D;
+  --text-secondary: #6B6B6B;
+  --text-tertiary: #9E9E9E;
+
+  /* Borders */
+  --border-primary: #000000;
+  --border-secondary: #E8E8E8;
+
+  /* Status Colors */
+  --status-error: #DC2626;
+  --status-success: #16A34A;
+  --status-warning: #F59E0B;
+
+  /* Shadows */
+  --shadow-gold: 0 4px 12px rgba(212, 175, 55, 0.3);
+  --shadow-gold-light: 0 2px 8px rgba(212, 175, 55, 0.2);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.1);
+
+  /* Legacy variable mappings for compatibility */
+  --background: var(--bg-primary);
+  --foreground: var(--text-primary);
+  --card-bg: var(--bg-secondary);
+  --border-color: var(--border-secondary);
+  --accent: var(--accent-primary);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Dark mode - inverted warm tones */
+    --background: #2a2623;
+    --foreground: var(--parchment);
+    --card-bg: #363330;
+    --border-color: #4a4542;
+    --accent: var(--bone);
   }
 }
 
@@ -22,4 +61,32 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+}
+
+/* Shimmer animation for AI analyzing text - vertical scanning effect */
+@keyframes shimmer {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Vertical scan line animation */
+@keyframes scan-vertical {
+  0% {
+    top: 0%;
+  }
+  100% {
+    top: 100%;
+  }
+}
+
+.animate-scan-vertical {
+  animation: scan-vertical 2s ease-in-out infinite;
 }

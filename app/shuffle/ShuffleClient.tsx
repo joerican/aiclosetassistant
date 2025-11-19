@@ -71,23 +71,24 @@ export default function ShufflePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-purple-50 to-pink-50 dark:from-gray-900 dark:to-black">
+    <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm">
+      <header className="bg-white border-b-2 border-black">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              <h1 style={{ color: 'var(--text-primary)' }} className="text-2xl font-bold">
                 Outfit Shuffle
               </h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              <p style={{ color: 'var(--text-secondary)' }} className="text-sm mt-1">
                 Discover new outfit combinations
               </p>
             </div>
             <div className="flex items-center gap-4">
               <Link
                 href="/closet"
-                className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                style={{ color: 'var(--text-secondary)' }}
+                className="hover:opacity-70 transition-opacity"
               >
                 Back to Closet
               </Link>
@@ -99,62 +100,62 @@ export default function ShufflePage() {
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="text-center mb-8">
-          <h2 className="text-3xl font-bold mb-2">
+          <h2 style={{ color: 'var(--text-primary)' }} className="text-3xl font-bold mb-2">
             Pull the lever to shuffle!
           </h2>
-          <p className="text-gray-600 dark:text-gray-400">
+          <p style={{ color: 'var(--text-secondary)' }}>
             Get inspired with random outfit combinations from your closet
           </p>
         </div>
 
         {/* Slot Machine */}
-        <div className="bg-gradient-to-b from-purple-600 to-pink-600 rounded-2xl p-8 shadow-2xl mb-8">
+        <div style={{ backgroundColor: 'var(--accent-primary)' }} className="rounded-2xl p-8 mb-8 border-2 border-black">
           <div className="grid grid-cols-3 gap-6 mb-8">
             {/* Top Slot */}
-            <div className={`bg-white dark:bg-gray-800 rounded-xl p-6 min-h-[300px] flex flex-col items-center justify-center transition-transform ${isShuffling ? "animate-pulse" : ""}`}>
+            <div className={`bg-white border-2 border-black rounded-xl p-6 min-h-[300px] flex flex-col items-center justify-center transition-transform ${isShuffling ? "animate-pulse" : ""}`}>
               <div className="text-6xl mb-4">👕</div>
-              <h3 className="text-lg font-bold mb-2">Top</h3>
+              <h3 style={{ color: 'var(--text-primary)' }} className="text-lg font-bold mb-2">Top</h3>
               {currentOutfit.top ? (
                 <div className="text-center">
-                  <div className="w-32 h-32 bg-gray-200 dark:bg-gray-700 rounded-lg mb-2 flex items-center justify-center">
+                  <div className="w-32 h-32 bg-white rounded-lg mb-2 flex items-center justify-center">
                     <span className="text-4xl">👕</span>
                   </div>
-                  <p className="text-sm font-medium">{currentOutfit.top.name}</p>
+                  <p style={{ color: 'var(--text-primary)' }} className="text-sm font-medium">{currentOutfit.top.name}</p>
                 </div>
               ) : (
-                <p className="text-gray-400">Pull to shuffle</p>
+                <p style={{ color: 'var(--text-secondary)' }}>Pull to shuffle</p>
               )}
             </div>
 
             {/* Bottom Slot */}
-            <div className={`bg-white dark:bg-gray-800 rounded-xl p-6 min-h-[300px] flex flex-col items-center justify-center transition-transform ${isShuffling ? "animate-pulse" : ""}`}>
+            <div className={`bg-white border-2 border-black rounded-xl p-6 min-h-[300px] flex flex-col items-center justify-center transition-transform ${isShuffling ? "animate-pulse" : ""}`}>
               <div className="text-6xl mb-4">👖</div>
-              <h3 className="text-lg font-bold mb-2">Bottom</h3>
+              <h3 style={{ color: 'var(--text-primary)' }} className="text-lg font-bold mb-2">Bottom</h3>
               {currentOutfit.bottom ? (
                 <div className="text-center">
-                  <div className="w-32 h-32 bg-gray-200 dark:bg-gray-700 rounded-lg mb-2 flex items-center justify-center">
+                  <div className="w-32 h-32 bg-white rounded-lg mb-2 flex items-center justify-center">
                     <span className="text-4xl">👖</span>
                   </div>
-                  <p className="text-sm font-medium">{currentOutfit.bottom.name}</p>
+                  <p style={{ color: 'var(--text-primary)' }} className="text-sm font-medium">{currentOutfit.bottom.name}</p>
                 </div>
               ) : (
-                <p className="text-gray-400">Pull to shuffle</p>
+                <p style={{ color: 'var(--text-secondary)' }}>Pull to shuffle</p>
               )}
             </div>
 
             {/* Shoes Slot */}
-            <div className={`bg-white dark:bg-gray-800 rounded-xl p-6 min-h-[300px] flex flex-col items-center justify-center transition-transform ${isShuffling ? "animate-pulse" : ""}`}>
+            <div className={`bg-white border-2 border-black rounded-xl p-6 min-h-[300px] flex flex-col items-center justify-center transition-transform ${isShuffling ? "animate-pulse" : ""}`}>
               <div className="text-6xl mb-4">👟</div>
-              <h3 className="text-lg font-bold mb-2">Shoes</h3>
+              <h3 style={{ color: 'var(--text-primary)' }} className="text-lg font-bold mb-2">Shoes</h3>
               {currentOutfit.shoes ? (
                 <div className="text-center">
-                  <div className="w-32 h-32 bg-gray-200 dark:bg-gray-700 rounded-lg mb-2 flex items-center justify-center">
+                  <div className="w-32 h-32 bg-white rounded-lg mb-2 flex items-center justify-center">
                     <span className="text-4xl">👟</span>
                   </div>
-                  <p className="text-sm font-medium">{currentOutfit.shoes.name}</p>
+                  <p style={{ color: 'var(--text-primary)' }} className="text-sm font-medium">{currentOutfit.shoes.name}</p>
                 </div>
               ) : (
-                <p className="text-gray-400">Pull to shuffle</p>
+                <p style={{ color: 'var(--text-secondary)' }}>Pull to shuffle</p>
               )}
             </div>
           </div>
@@ -181,13 +182,19 @@ export default function ShufflePage() {
           <div className="flex gap-4 justify-center">
             <button
               onClick={handleShuffle}
-              className="px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+              style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
+              className="px-4 py-2 text-white rounded-lg font-medium transition-all hover:shadow-lg"
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
             >
               Shuffle Again
             </button>
             <button
               onClick={handleSaveOutfit}
-              className="px-8 py-3 bg-pink-600 hover:bg-pink-700 text-white rounded-lg font-medium transition-colors"
+              style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
+              className="px-4 py-2 text-white rounded-lg font-medium transition-all hover:shadow-lg"
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
             >
               Save This Outfit
             </button>
@@ -197,12 +204,15 @@ export default function ShufflePage() {
         {/* Empty State */}
         {!currentOutfit.top && !isShuffling && (
           <div className="text-center py-8">
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
+            <p style={{ color: 'var(--text-secondary)' }} className="mb-4">
               You need at least one item in each category to shuffle
             </p>
             <Link
               href="/upload"
-              className="inline-block px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+              style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
+              className="inline-block px-4 py-2 text-white rounded-lg font-medium transition-all hover:shadow-lg"
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
             >
               Add Items to Your Closet
             </Link>

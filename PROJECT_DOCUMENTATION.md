@@ -1,7 +1,8 @@
 # AI Closet Assistant - Project Documentation
 
-**Last Updated**: 2025-11-19 04:40 EST (Added Claude Code Configuration)
+**Last Updated**: 2025-11-19 04:39 EST (✅ AI Working - License Agreement Added)
 **Status**: ✅ LIVE AND WORKING - Zero Warnings, Latest Everything
+**⚠️ LEGAL TODO**: Must add user license agreement before public launch (see docs/legal/llama-license-requirements.md)
 **Production URL**: https://aiclosetassistant.com
 **Worker URL**: https://aiclosetassistant.aiclosetassistant-com-account.workers.dev
 **Project Path**: `/Users/jorge/Code Projects/aiclosetassistant`
@@ -12,19 +13,89 @@
 
 ## 🚨 Recent Breaking Changes
 
-**Claude Code Configuration Added (2025-11-19 04:40 EST)**:
+**AI Metadata Storage + Detail Modal Added (2025-11-19 04:26 EST)**:
+- ✅ **AI metadata now saved to database** - subcategory, color, brand, tags stored in D1
+- ✅ **Item detail modal** - Click any item in closet to see full details
+- **Database Updates**:
+  - Upload endpoint now saves AI-detected metadata to clothing_items table
+  - Added fields: subcategory, color, brand, tags (JSON)
+- **UI Improvements**:
+  - Closet items now show subcategory instead of just category
+  - Modal displays all AI-detected information
+  - Tags displayed as purple badges
+  - Shows when item was added
+  - Placeholder buttons for favorite/delete features
+- **Files Updated**:
+  - `/app/api/upload-item/route.ts` - Parse and save AI metadata
+  - `/app/upload/UploadClient.tsx` - Send AI metadata with upload
+  - `/app/closet/ClosetClient.tsx` - Added detail modal on item click
+
+**AI-Powered Metadata Extraction Added (2025-11-19 04:19 EST)**:
+- ✅ **Added**: Automatic clothing analysis using Cloudflare AI vision models
+- **Features**:
+  - Detects category (tops, bottoms, shoes, outerwear, accessories)
+  - Identifies colors (primary and secondary)
+  - Recognizes brand names (if visible)
+  - Generates description and tags
+  - Auto-fills category field after background removal
+- **Model**: Llama 3.2 11B Vision Instruct (`@cf/meta/llama-3.2-11b-vision-instruct`)
+- **Cost**: ~$0.00016 per image (~0.016 cents) - extremely cheap!
+- **Free Tier**: 10,000 Neurons/day (enough for 2-3 analyses/day)
+- **Implementation**:
+  - Created `/app/api/analyze-image/route.ts` endpoint
+  - Updated `UploadClient.tsx` to call API after background removal
+  - Added AI metadata display card with detected info
+- **Documentation**: See `docs/api-references/cloudflare-workers-ai.md`
+
+**Image Optimization Added (2025-11-19 04:09 EST)**:
+- ✅ **Added**: Automatic image resizing and WebP compression on upload
+- **Optimization Details**:
+  - Original images: Max 1200px width, WebP, 85% quality
+  - Processed images: Max 800px width, WebP, 90% quality
+  - Thumbnails: 300px width, WebP, 80% quality
+- **File Size Savings**: ~80-95% reduction (5MB photos → ~200-400KB)
+- **Benefits**: Faster page loads, lower bandwidth, better mobile experience
+- **Implementation**: Uses Cloudflare Images API `.transform()` + `.output()`
+
+**Background Removal Fixed with Images API (2025-11-19 03:56 EST)**:
+- ✅ **FIXED**: Background removal now works using Cloudflare Images API
+- **Issue**: `@cf/cloudflare/rembg` model doesn't exist in Workers AI
+- **Solution**: Use Cloudflare Images API with `segment: 'foreground'` parameter
+- **Model**: BiRefNet (Bilateral Reference Network) for image segmentation
+- **Changes Made**:
+  - Updated `app/api/remove-background/route.ts` to use IMAGES binding
+  - Added Images binding to `wrangler.jsonc`
+  - Added IMAGES type to `cloudflare-env.d.ts`
+- **Requirements**: Paid Cloudflare plan with Images Transformations enabled
+- **Documentation**: See `docs/api-references/cloudflare-background-removal.md`
+
+**Deploy Script Fixed (2025-11-19 03:48 EST)**:
+- ✅ **Fixed**: `npm run deploy` now properly sets `NEXT_PUBLIC_BUILD_TIME`
+- **Issue**: OpenNext was building without the build time environment variable
+- **Solution**: Added `NEXT_PUBLIC_BUILD_TIME` to both `deploy` and `preview` scripts in package.json
+- **Result**: Version badge now updates correctly on every deployment
+- **Command**: `npm run deploy` (no longer need separate `npm run build`)
+
+**Build Process Documented (2025-11-19 03:43 EST)**:
+- ✅ **Version Badge**: Build timestamp now displays in bottom-right corner
+- **How to Deploy**: Must run `npm run build` before deploy to update version
+- **Format**: `buildYYYYMMDD-hhmmss` (e.g., `build20251119-044500`)
+- **Purpose**: Verify deployments are live with visible build number
+- **Documented in**: Deployment section with clear instructions
+
+**Claude Code Configuration Added (2025-11-19 03:38 EST)**:
 - ✅ **Added `.claude/rules.md`** - Automatic session initialization rules
 - ✅ **Added `.claude/commands/docs.md`** - `/docs` slash command to read documentation
 - **Working Directory**: Set to `/Users/jorge/Code Projects/aiclosetassistant`
 - **Auto-reads**: PROJECT_DOCUMENTATION.md at start of every session
 - **Benefits**: Session continuity, automatic context loading, consistent working directory
 
-**Custom Domain Added (2025-11-19 04:35 EST)**:
+**Custom Domain Added (2025-11-19 03:35 EST)**:
 - ✅ **Custom Domain**: https://aiclosetassistant.com now points to the Worker
 - **Worker URL**: https://aiclosetassistant.aiclosetassistant-com-account.workers.dev (still accessible)
 - **Configured in**: Cloudflare Dashboard → Workers & Pages → aiclosetassistant → Settings → Domains
 
-**Background Removal Fixed (2025-11-19 04:30 EST)**:
+**Background Removal Fixed (2025-11-19 03:30 EST)**:
 - ✅ **Fixed**: Background removal now actually works using Cloudflare AI
 - **Issue**: Code was using incorrect Image Transformations API instead of Cloudflare AI Workers
 - **Solution**: Updated `/api/remove-background/route.ts` to use `AI.run('@cf/cloudflare/rembg')` directly
@@ -82,6 +153,12 @@
 - Lessons learned
 
 Every code change, dependency update, or architectural decision MUST be documented here with timestamps. This ensures continuity between sessions and prevents knowledge loss.
+
+**Timestamp Guidelines**:
+- Use `date +"%Y-%m-%d %H:%M %Z"` command to get accurate current time
+- Format: `YYYY-MM-DD HH:MM TZ` (e.g., `2025-11-19 03:43 EST`)
+- Never guess timestamps - always check the actual time
+- Update both the header "Last Updated" and the "Recent Breaking Changes" entry
 
 ### Always Use Latest Tools
 This is a new project, so we prioritize using the latest stable versions of all tools and dependencies. When we see deprecation warnings or notices about newer versions, we migrate immediately rather than deferring upgrades. This approach:
@@ -291,18 +368,29 @@ OpenNext deploys to **Cloudflare Workers** only. Cloudflare Pages project has be
 
 ### How to Deploy
 
+**Use this command to deploy:**
+
 ```bash
 cd "/Users/jorge/Code Projects/aiclosetassistant"
-npx opennextjs-cloudflare deploy
+npm run deploy
 ```
 
-This deploys directly to Cloudflare Workers. The deployment:
+**What it does**:
+- Sets `NEXT_PUBLIC_BUILD_TIME` with current timestamp for version badge
+- Builds Next.js app with OpenNext adapter
 - Uploads worker code to Cloudflare
 - Binds D1, R2, and AI resources
-- Makes site live at the Workers URL
-- Applies observability logging configuration
+- Makes site live at the production URL
+- Version badge (bottom-right corner) shows format: `buildYYYYMMDD-hhmmss`
 
 **Deployment Status**: ✅ Working perfectly
+
+**Manual alternative (not recommended)**:
+```bash
+npm run build  # Only if you need to test build locally
+npx opennextjs-cloudflare deploy
+```
+Note: This won't update the version badge properly. Always use `npm run deploy` instead.
 
 ### Alternative Deployment Options for Future
 
@@ -520,6 +608,63 @@ Deployment logs available at:
 ---
 
 ## 📚 Important Files Reference
+
+### API Documentation (`docs/api-references/`)
+
+Reference documentation for all external APIs and services we use. **These are critical** because we're using the latest versions of everything and official docs may change.
+
+#### Core Infrastructure
+
+- **`opennext-cloudflare.md`** - OpenNext Cloudflare Adapter
+  - How we deploy Next.js to Cloudflare Workers
+  - Wrangler configuration, bindings setup, deployment commands
+  - Size limitations, build process, troubleshooting
+  - Version: @opennextjs/cloudflare v1.13.0
+
+- **`nextjs-route-handlers.md`** - Next.js Route Handlers (API Routes)
+  - How to create API routes in App Router
+  - Request/response handling, TypeScript types
+  - Cloudflare context access with `getCloudflareContext()`
+  - **CRITICAL**: params is a Promise in Next.js 15+ (must await!)
+  - Version: Next.js 16.0.3
+
+#### Data & Storage
+
+- **`cloudflare-d1.md`** - Cloudflare D1 SQLite Database
+  - How to query from Workers using prepare().bind().all()
+  - Batch operations, transactions, type conversion
+  - Our database schema reference
+  - Database ID: 6b5601ee-c870-422c-8818-2d4420f1c6f3
+
+- **`cloudflare-r2.md`** - Cloudflare R2 Object Storage
+  - put(), get(), delete(), list() methods
+  - Image upload patterns, metadata handling
+  - Our storage structure (original/, processed/, thumbnails/)
+  - Bucket: closet-images
+
+#### AI & Image Processing
+
+- **`cloudflare-background-removal.md`** - Cloudflare Images API
+  - Documents the discovery that `@cf/cloudflare/rembg` doesn't exist
+  - Shows correct way to use Images API with `segment: 'foreground'`
+  - BiRefNet model usage, binding setup
+  - **CRITICAL**: Read this before implementing background removal
+
+**Why we keep these docs**:
+- We upgraded to latest versions of all dependencies (Next.js 16, React 19, etc.)
+- Official docs may change or become outdated
+- Having local copies ensures we know exactly which APIs we're using
+- Prevents future sessions from making the same mistakes
+- Documents our specific implementation patterns
+
+### `app/components/VersionBadge.tsx`
+- **Purpose**: Display build version in bottom-right corner of all pages
+- **Format**: `buildYYYYMMDD-hhmmss` (e.g., `build20251119-043000`)
+- **How it works**:
+  - Reads `NEXT_PUBLIC_BUILD_TIME` set during `npm run build`
+  - Shows as small badge in bottom-right corner
+  - Helps verify deployments are live
+- **Location**: Imported in `app/layout.tsx`, visible on all pages
 
 ### `.claude/rules.md`
 - **Purpose**: Claude Code automatic session initialization
