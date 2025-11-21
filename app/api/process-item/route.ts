@@ -1,5 +1,4 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
-import { decode } from 'fast-png';
 
 export async function POST(request: Request) {
   try {
@@ -19,8 +18,9 @@ export async function POST(request: Request) {
     const IMAGES = env.IMAGES;
     const AI = env.AI;
     const R2 = env.CLOSET_IMAGES;
+    const IMAGE_TRIM = (env as any).IMAGE_TRIM as { fetch: (request: Request) => Promise<Response> };
 
-    if (!IMAGES || !AI || !R2) {
+    if (!IMAGES || !AI || !R2 || !IMAGE_TRIM) {
       return new Response(JSON.stringify({ error: 'Bindings not available' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
@@ -47,89 +47,21 @@ export async function POST(request: Request) {
     const bgRemovedBuffer = await response.arrayBuffer();
     console.log(`[process-item] BG removed PNG: ${(bgRemovedBuffer.byteLength / 1024).toFixed(1)}KB`);
 
-    // Auto-trim transparent pixels
-    const png = decode(new Uint8Array(bgRemovedBuffer));
-    const { width, height, data } = png;
+    // Use IMAGE_TRIM service for auto-trim (offloads CPU-intensive work to separate Worker with WASM)
+    const trimResponse = await IMAGE_TRIM.fetch(new Request('https://image-trim/', {
+      method: 'POST',
+      body: bgRemovedBuffer,
+      headers: { 'Content-Type': 'image/png' }
+    }));
 
-    let minX = width;
-    let minY = height;
-    let maxX = 0;
-    let maxY = 0;
-
-    // Find bounding box of non-transparent pixels
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = (width * y + x) * 4;
-        const alpha = data[idx + 3];
-        if (alpha > 10) {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-        }
-      }
+    if (!trimResponse.ok) {
+      console.error('[process-item] IMAGE_TRIM failed:', await trimResponse.text());
+      throw new Error('Image trimming failed');
     }
 
-    let processedResult: ArrayBuffer;
-
-    // Check if we found any content
-    if (maxX <= minX || maxY <= minY) {
-      console.log('[process-item] No content found, using original');
-      processedResult = bgRemovedBuffer;
-    } else {
-      // Add small padding (5% of dimensions)
-      const padding = Math.max(5, Math.floor(Math.min(maxX - minX, maxY - minY) * 0.05));
-      minX = Math.max(0, minX - padding);
-      minY = Math.max(0, minY - padding);
-      maxX = Math.min(width - 1, maxX + padding);
-      maxY = Math.min(height - 1, maxY + padding);
-
-      let cropWidth = maxX - minX + 1;
-      let cropHeight = maxY - minY + 1;
-
-      // Ensure minimum dimensions (at least 300px on shortest side)
-      const MIN_DIMENSION = 300;
-      if (cropWidth < MIN_DIMENSION || cropHeight < MIN_DIMENSION) {
-        const scale = MIN_DIMENSION / Math.min(cropWidth, cropHeight);
-        if (scale > 1) {
-          const expandX = Math.floor((cropWidth * scale - cropWidth) / 2);
-          const expandY = Math.floor((cropHeight * scale - cropHeight) / 2);
-          minX = Math.max(0, minX - expandX);
-          maxX = Math.min(width - 1, maxX + expandX);
-          minY = Math.max(0, minY - expandY);
-          maxY = Math.min(height - 1, maxY + expandY);
-          cropWidth = maxX - minX + 1;
-          cropHeight = maxY - minY + 1;
-        }
-      }
-
-      console.log(`[process-item] Cropping from ${width}x${height} to ${cropWidth}x${cropHeight}`);
-
-      // Use Cloudflare Images API to crop (much more efficient than re-encoding PNG)
-      const cropResult = await IMAGES
-        .input(bgRemovedBuffer)
-        .transform({
-          trim: { left: minX, top: minY, right: width - maxX - 1, bottom: height - maxY - 1 }
-        })
-        .output({ format: 'image/png' });
-
-      const cropResponse = await cropResult.response();
-      processedResult = await cropResponse.arrayBuffer();
-      console.log(`[process-item] Trimmed PNG: ${(processedResult.byteLength / 1024).toFixed(1)}KB`);
-    }
-
-    // Convert PNG to WebP for storage
-    const webpResult = await IMAGES
-      .input(processedResult)
-      .transform({
-        width: 512,
-        fit: 'scale-down'
-      })
-      .output({ format: 'image/webp', quality: 90 });
-
-    const webpResponse = await webpResult.response();
-    const webpBuffer = await webpResponse.arrayBuffer();
-    console.log(`[process-item] WebP for storage: ${(webpBuffer.byteLength / 1024).toFixed(1)}KB`);
+    // IMAGE_TRIM returns WebP directly
+    const webpBuffer = await trimResponse.arrayBuffer();
+    console.log(`[process-item] Trimmed WebP: ${(webpBuffer.byteLength / 1024).toFixed(1)}KB`);
 
     // Store in R2
     const imageKey = `items/${itemId}.webp`;
@@ -140,11 +72,11 @@ export async function POST(request: Request) {
     });
     console.log(`[process-item] Stored in R2: ${imageKey}`);
 
-    // Step 2: AI analysis using the BG-removed image (cleaner input = better results)
+    // Step 2: AI analysis using the trimmed WebP image
     let aiResult = null;
 
-    // Convert processed image to base64 in chunks to avoid stack overflow
-    const uint8Array = new Uint8Array(processedResult);
+    // Convert trimmed WebP to base64 in chunks to avoid stack overflow
+    const uint8Array = new Uint8Array(webpBuffer);
     let base64 = '';
     const chunkSize = 8192;
     for (let i = 0; i < uint8Array.length; i += chunkSize) {
@@ -154,8 +86,8 @@ export async function POST(request: Request) {
     const imageBase64 = btoa(base64);
     console.log('[process-item] Base64 length:', imageBase64.length);
 
-    // Try AI analysis with 1 automatic retry
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    // Try AI analysis with 2 automatic retries
+    for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         console.log(`[process-item] AI analysis attempt ${attempt}...`);
 
@@ -218,7 +150,7 @@ Return ONLY valid JSON, no other text.`
         }
       } catch (err) {
         console.error(`[process-item] AI analysis error (attempt ${attempt}):`, err);
-        if (attempt === 2) {
+        if (attempt === 3) {
           // Final attempt failed, continue without AI data
           break;
         }

@@ -1,0 +1,5 @@
+name = "image-trim"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+account_id = "73d8f7df9a58eb64c1cc943d0c76d474"

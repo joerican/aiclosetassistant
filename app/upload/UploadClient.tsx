@@ -345,7 +345,7 @@ export default function UploadPage() {
     console.log('[Queue] Starting processing of', items.length, 'items');
     let successCount = 0;
     let completedCount = 0;
-    const BATCH_SIZE = 6; // Process 6 items concurrently
+    const BATCH_SIZE = 6; // Process 6 items concurrently (trimming offloaded to IMAGE_TRIM Worker)
 
     // Process in batches of BATCH_SIZE
     for (let batchStart = 0; batchStart < items.length; batchStart += BATCH_SIZE) {
@@ -1233,6 +1233,32 @@ export default function UploadPage() {
         idx === currentIndex ? { ...q, status: 'done' } : q
       ));
 
+      // Re-check duplicates for remaining items against newly saved item
+      const savedHash = currentItem.imageHash;
+      if (savedHash && currentIndex < imageQueue.length - 1) {
+        // Check remaining items for duplicates against what we just saved
+        for (let i = currentIndex + 1; i < imageQueue.length; i++) {
+          const item = imageQueue[i];
+          if (item.imageHash && item.status === 'ready' && !item.isDuplicate) {
+            // Re-check this item for duplicates (will now find the just-saved item)
+            const duplicateResult = await checkDuplicate(item.imageHash);
+            if (duplicateResult.duplicate && duplicateResult.existingItem) {
+              setImageQueue(prev => prev.map((q, idx) =>
+                idx === i ? {
+                  ...q,
+                  isDuplicate: true,
+                  duplicateInfo: {
+                    subcategory: duplicateResult.existingItem.subcategory,
+                    color: duplicateResult.existingItem.color,
+                    brand: duplicateResult.existingItem.brand,
+                  }
+                } : q
+              ));
+            }
+          }
+        }
+      }
+
       // If there are more items, move to next one
       if (currentIndex < imageQueue.length - 1) {
         moveToNextItem();
@@ -1476,7 +1502,7 @@ export default function UploadPage() {
               {imageQueue[currentIndex]?.isDuplicate && (
                 <div className="bg-yellow-50 border border-yellow-200 px-4 py-3 mb-4">
                   <p className="text-xs text-yellow-800">
-                    <span className="font-medium">Duplicate detected:</span> You already have{' '}
+                    <span className="font-medium">Possible duplicate:</span> You may already have{' '}
                     {[
                       imageQueue[currentIndex].duplicateInfo?.subcategory,
                       imageQueue[currentIndex].duplicateInfo?.color,

@@ -12,6 +12,10 @@
     {
       "binding": "WORKER",
       "service": "aiclosetassistant"
+    },
+    {
+      "binding": "IMAGE_TRIM",
+      "service": "image-trim"
     }
   ],
   "d1_databases": [
