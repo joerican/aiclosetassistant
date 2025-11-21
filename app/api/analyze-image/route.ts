@@ -86,14 +86,16 @@ CRITICAL: Your response must be ONLY the JSON object below, with no other text, 
     "secondary": "secondary color if any",
     "accent": "accent colors if any"
   },
-  "additional_observations": "any other details, characteristics, or notable aspects you can detect about this item that weren't covered above"
+  "additional_observations": "any other details, characteristics, or notable aspects you can detect about this item that weren't covered above",
+  "orientation": "CRITICAL: Determine if the clothing item is shown in the correct upright position. For tops/shirts: collar/neckline should be at top, hem at bottom. For pants/bottoms: waistband at top, leg openings at bottom. For shoes: sole at bottom, opening at top. Return one of: correct, upside_down, rotated_left, rotated_right, unclear"
 }
 
 IMPORTANT:
 - Do NOT nest JSON objects inside string fields
 - Do NOT add periods, extra text, or explanations after the JSON
 - If you cannot determine a field, use null
-- Respond ONLY with the JSON object`;
+- Respond ONLY with the JSON object
+- For orientation: carefully check if the item appears upside down (e.g., shirt with collar at bottom)`;
 
     // Helper function to call AI (used for retry logic)
     const callAI = async () => {

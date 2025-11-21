@@ -1,6 +1,10 @@
 "use client";
 
+import { useState } from "react";
+
 export default function VersionBadge() {
+  const [clicked, setClicked] = useState(false);
+
   // This will be replaced at build time
   const buildTime = process.env.NEXT_PUBLIC_BUILD_TIME || new Date().toISOString();
 
@@ -19,9 +23,35 @@ export default function VersionBadge() {
 
   const version = formatBuildVersion(buildTime);
 
+  const handleClick = () => {
+    const timestamp = new Date().toISOString();
+    const userMessage = prompt("Describe the issue (optional):");
+
+    // Log to console with clear markers
+    console.error("🐛 DEBUG MARKER 🐛");
+    console.error("Timestamp:", timestamp);
+    console.error("User reported issue:", userMessage || "No description provided");
+    console.error("User Agent:", navigator.userAgent);
+    console.error("Screen:", `${window.screen.width}x${window.screen.height}`);
+    console.error("Viewport:", `${window.innerWidth}x${window.innerHeight}`);
+
+    // Visual feedback
+    setClicked(true);
+    setTimeout(() => setClicked(false), 2000);
+
+    alert(`Issue logged at ${new Date().toLocaleTimeString()}\n\nCheck production logs for details.`);
+  };
+
   return (
-    <div className="fixed bottom-2 right-2 text-xs text-white bg-gray-900/50 px-2 py-1 rounded backdrop-blur-sm z-50 font-mono">
-      {version}
-    </div>
+    <button
+      onClick={handleClick}
+      className={`fixed bottom-2 right-2 text-xs px-2 py-1 rounded backdrop-blur-sm z-50 font-mono transition-all duration-200 ${
+        clicked
+          ? "bg-green-600 text-white scale-110"
+          : "text-white bg-gray-900/50 hover:bg-gray-900/70"
+      }`}
+    >
+      {clicked ? "Logged!" : version}
+    </button>
   );
 }

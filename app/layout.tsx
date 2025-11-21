@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import VersionBadge from "./components/VersionBadge";
-import DebugButton from "./components/DebugButton";
 
 export const metadata: Metadata = {
-  title: "AI Closet Assistant",
-  description: "AI-powered digital closet organizer with outfit shuffle feature",
+  title: "ClosetAI",
+  description: "Your intelligent wardrobe companion",
 };
 
 export default function RootLayout({
@@ -18,7 +17,6 @@ export default function RootLayout({
       <body>
         {children}
         <VersionBadge />
-        <DebugButton />
       </body>
     </html>
   );

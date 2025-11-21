@@ -30,6 +30,8 @@ export interface ClothingItem {
   cost?: number;
   date_purchased?: number;
   store_purchased_from?: string;
+  rotation?: number;
+  original_filename?: string;
   created_at: number;
   updated_at: number;
 }

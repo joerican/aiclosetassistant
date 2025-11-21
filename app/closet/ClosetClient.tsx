@@ -15,9 +15,17 @@ import {
   Plus,
   Shuffle,
   Icon,
-  Hourglass
+  Hourglass,
+  Menu,
+  X,
+  Home,
+  Info,
+  Sparkles,
+  RotateCcw,
+  RotateCw
 } from "lucide-react";
 import { trousers, coatHanger } from "@lucide/lab";
+import Logo from "../components/Logo";
 
 // Wrapper component for lab icons
 const TrousersIcon = (props: any) => <Icon iconNode={trousers} {...props} />;
@@ -30,6 +38,8 @@ export default function ClosetPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<ClothingItem | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showItemDetails, setShowItemDetails] = useState(false);
 
   // Edit form states
   const [editCategory, setEditCategory] = useState<Category>("tops");
@@ -40,17 +50,48 @@ export default function ClosetPage() {
   const [editCost, setEditCost] = useState("");
   const [editDatePurchased, setEditDatePurchased] = useState("");
   const [editStorePurchasedFrom, setEditStorePurchasedFrom] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   const categories: Array<{ value: Category | "all"; label: string; IconComponent: any }> = [
     { value: "all", label: "All", IconComponent: ShoppingBag },
     { value: "tops", label: "Tops", IconComponent: Shirt },
     { value: "bottoms", label: "Bottoms", IconComponent: TrousersIcon },
-    { value: "shoes", label: "Shoes", IconComponent: Footprints },
+    { value: "shoes", label: "Footwear", IconComponent: Footprints },
     { value: "outerwear", label: "Outerwear", IconComponent: Wind },
     { value: "accessories", label: "Accessories", IconComponent: Watch },
   ];
 
+  // Category order for grouped display
+  const categoryOrder: Category[] = ["tops", "bottoms", "shoes", "outerwear", "accessories"];
+  const categoryLabels: Record<Category, string> = {
+    tops: "Tops",
+    bottoms: "Bottoms",
+    shoes: "Footwear",
+    outerwear: "Outerwear",
+    accessories: "Accessories"
+  };
+  const categoryIcons: Record<Category, any> = {
+    tops: Shirt,
+    bottoms: TrousersIcon,
+    shoes: Footprints,
+    outerwear: Wind,
+    accessories: Watch
+  };
+
   const fullCategories: Category[] = ["tops", "bottoms", "shoes", "outerwear", "accessories"];
+
+  // Helper to build image URL with rotation param
+  const getImageUrl = (item: ClothingItem, width?: number) => {
+    const baseUrl = item.background_removed_url || item.thumbnail_url || item.original_image_url;
+    if (!baseUrl) return '';
+
+    const params = new URLSearchParams();
+    if (width) params.set('w', width.toString());
+    if (item.rotation && item.rotation !== 0) params.set('rotate', item.rotation.toString());
+
+    const queryString = params.toString();
+    return queryString ? `${baseUrl}?${queryString}` : baseUrl;
+  };
 
   // Fetch items when component mounts or category changes
   useEffect(() => {
@@ -80,15 +121,82 @@ export default function ClosetPage() {
   const handleItemClick = (item: ClothingItem) => {
     setSelectedItem(item);
     setIsEditMode(false);
-    // Initialize edit form values
+    setShowItemDetails(false);  // Always start with main view (image + Create Outfit)
+    // Initialize edit form values - use empty string for null/undefined
     setEditCategory(item.category);
-    setEditSubcategory(item.subcategory || "");
-    setEditColor(item.color || "");
-    setEditBrand(item.brand || "");
-    setEditSize(item.size || "");
-    setEditCost(item.cost ? item.cost.toString() : "");
+    setEditSubcategory(item.subcategory ?? "");
+    setEditColor(item.color ?? "");
+    setEditBrand(item.brand ?? "");
+    setEditSize(item.size ?? "");
+    setEditCost(item.cost != null ? item.cost.toString() : "");
     setEditDatePurchased(item.date_purchased ? new Date(item.date_purchased).toISOString().split('T')[0] : "");
-    setEditStorePurchasedFrom(item.store_purchased_from || "");
+    setEditStorePurchasedFrom(item.store_purchased_from ?? "");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedItem) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch('/api/update-item', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: selectedItem.id,
+          userId: 'default-user',
+          category: editCategory,
+          subcategory: editSubcategory || null,
+          color: editColor || null,
+          brand: editBrand || null,
+          size: editSize || null,
+          cost: editCost || null,
+          date_purchased: editDatePurchased ? new Date(editDatePurchased).getTime().toString() : null,
+          store_purchased_from: editStorePurchasedFrom || null,
+          rotation: selectedItem.rotation || 0,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update item');
+      }
+
+      // Update local state
+      setItems(items.map(item =>
+        item.id === selectedItem.id
+          ? {
+              ...item,
+              category: editCategory,
+              subcategory: editSubcategory || undefined,
+              color: editColor || undefined,
+              brand: editBrand || undefined,
+              size: editSize || undefined,
+              cost: editCost ? parseFloat(editCost) : undefined,
+              date_purchased: editDatePurchased ? new Date(editDatePurchased).getTime() : undefined,
+              store_purchased_from: editStorePurchasedFrom || undefined,
+            }
+          : item
+      ));
+
+      // Update selected item
+      setSelectedItem({
+        ...selectedItem,
+        category: editCategory,
+        subcategory: editSubcategory || undefined,
+        color: editColor || undefined,
+        brand: editBrand || undefined,
+        size: editSize || undefined,
+        cost: editCost ? parseFloat(editCost) : undefined,
+        date_purchased: editDatePurchased ? new Date(editDatePurchased).getTime() : undefined,
+        store_purchased_from: editStorePurchasedFrom || undefined,
+      });
+
+      setIsEditMode(false);
+    } catch (err) {
+      console.error('Error updating item:', err);
+      alert('Failed to update item. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDeleteItem = async (itemId: string) => {
@@ -119,117 +227,139 @@ export default function ClosetPage() {
     }
   };
 
+  const handleDeleteAll = async () => {
+    if (items.length === 0) {
+      alert('No items to delete');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ALL ${items.length} items? This cannot be undone.`)) {
+      return;
+    }
+
+    // Double confirm for safety
+    if (!confirm('This will permanently delete all items from your closet. Are you absolutely sure?')) {
+      return;
+    }
+
+    try {
+      // Delete all items in parallel batches
+      const BATCH_SIZE = 6;
+      for (let i = 0; i < items.length; i += BATCH_SIZE) {
+        const batch = items.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map(item =>
+            fetch(`/api/delete-item?itemId=${item.id}&userId=default-user`, {
+              method: 'DELETE',
+            })
+          )
+        );
+      }
+
+      setItems([]);
+      setSelectedItem(null);
+      alert('All items deleted successfully');
+    } catch (err) {
+      console.error('Error deleting all items:', err);
+      alert('Failed to delete all items. Please try again.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="bg-white border-b-2 border-black">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <header className="border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-6 py-6">
           <div className="flex justify-between items-center">
-            <div>
-              <h1 style={{ color: 'var(--text-primary)' }} className="text-2xl font-bold">
-                My Closet
-              </h1>
-              <p style={{ color: 'var(--text-secondary)' }} className="text-sm mt-1">
-                Manage your wardrobe
-              </p>
-            </div>
-            <div className="flex items-center gap-4">
-              <Link
-                href="/upload"
-                style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
-                className="px-4 py-2 text-white rounded-lg font-medium transition-all hover:shadow-lg inline-flex items-center gap-2"
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
-              >
-                <Plus size={20} strokeWidth={2} />
-                Add Items
-              </Link>
-              <Link
-                href="/shuffle"
-                style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
-                className="px-4 py-2 text-white rounded-lg font-medium transition-all hover:shadow-lg inline-flex items-center gap-2"
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
-              >
-                <Shuffle size={20} strokeWidth={2} />
-                Outfit Shuffle
-              </Link>
-            </div>
+            {/* Hamburger Menu Button */}
+            <button
+              onClick={() => setIsMenuOpen(true)}
+              className="p-2 hover:bg-gray-100 transition-colors"
+            >
+              <Menu size={24} strokeWidth={1.5} />
+            </button>
+
+            {/* Logo - 2x bigger (using lg size) */}
+            <Logo size="lg" />
+
+            {/* Add Button */}
+            <Link
+              href="/upload"
+              className="p-2 hover:bg-gray-100 transition-colors"
+            >
+              <Plus size={24} strokeWidth={1.5} />
+            </Link>
           </div>
         </div>
       </header>
 
-      {/* Category Filter */}
-      <div className="bg-white border-b-2 border-black">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-2 overflow-x-auto py-4">
-            {categories.map((cat) => (
-              <button
-                key={cat.value}
-                onClick={() => setSelectedCategory(cat.value)}
-                style={selectedCategory === cat.value ? {
-                  backgroundColor: 'var(--accent-primary)',
-                  color: 'white',
-                  boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)'
-                } : {
-                  backgroundColor: 'white',
-                  color: 'var(--text-primary)'
-                }}
-                className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all border-2 border-black ${
-                  selectedCategory === cat.value
-                    ? ""
-                    : "hover:shadow-md"
-                }`}
-                onMouseEnter={(e) => {
-                  if (selectedCategory === cat.value) {
-                    e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (selectedCategory === cat.value) {
-                    e.currentTarget.style.backgroundColor = 'var(--accent-primary)';
-                  }
-                }}
-              >
-                <cat.IconComponent
-                  size={20}
-                  strokeWidth={1.5}
-                  className="mr-2 inline-block"
-                  style={{ color: selectedCategory === cat.value ? '#FFFFFF' : 'var(--accent-primary)' }}
-                />
-                {cat.label}
-              </button>
-            ))}
+      {/* Dropdown Menu - opens below header */}
+      {isMenuOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setIsMenuOpen(false)}
+          />
+
+          {/* Menu Panel - positioned below header */}
+          <div className="absolute left-0 right-0 z-50 bg-white shadow-lg border-b border-gray-200">
+            <div className="max-w-7xl mx-auto">
+              {/* Menu Items */}
+              <div className="py-2">
+                {categories.map((cat) => (
+                  <button
+                    key={cat.value}
+                    onClick={() => {
+                      setSelectedCategory(cat.value);
+                      setIsMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-4 px-6 py-4 text-left transition-colors ${
+                      selectedCategory === cat.value
+                        ? "bg-gray-100 text-black"
+                        : "text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    <cat.IconComponent size={20} strokeWidth={1.5} />
+                    <span className="text-sm">{cat.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Outfit Shuffle Link */}
+              <div className="px-6 py-4 border-t border-gray-200">
+                <Link
+                  href="/shuffle"
+                  className="flex items-center gap-4 text-gray-600 hover:text-black transition-colors"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  <Shuffle size={20} strokeWidth={1.5} />
+                  <span className="text-sm">Outfit Shuffle</span>
+                </Link>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Loading State */}
         {isLoading && (
-          <div className="text-center py-16">
-            <div className="mb-4 flex justify-center">
-              <Hourglass size={64} strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
-            </div>
-            <p style={{ color: 'var(--text-secondary)' }}>Loading your closet...</p>
+          <div className="text-center py-20">
+            <div className="animate-spin h-6 w-6 border-2 border-black border-t-transparent rounded-full mx-auto mb-6"></div>
+            <p className="text-xs uppercase tracking-widest text-gray-400">Loading collection</p>
           </div>
         )}
 
         {/* Error State */}
         {error && !isLoading && (
-          <div className="text-center py-16">
-            <div className="text-4xl mb-4">⚠️</div>
-            <h3 style={{ color: 'var(--text-primary)' }} className="text-xl font-semibold mb-2">
-              Error Loading Items
-            </h3>
-            <p style={{ color: 'var(--text-secondary)' }} className="mb-6">{error}</p>
+          <div className="text-center py-20">
+            <p className="text-xs uppercase tracking-widest text-gray-400 mb-4">Error loading items</p>
+            <p className="text-sm text-gray-500 mb-6">{error}</p>
             <button
               onClick={() => window.location.reload()}
-              style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
-              className="px-4 py-2 text-white rounded-lg font-medium transition-all hover:shadow-lg"
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
+              className="text-xs uppercase tracking-widest text-black border-b border-black pb-1 hover:opacity-70 transition-opacity"
             >
               Try Again
             </button>
@@ -238,24 +368,13 @@ export default function ClosetPage() {
 
         {/* Empty State */}
         {!isLoading && !error && items.length === 0 && (
-          <div className="text-center py-16">
-            <div className="mb-4 flex justify-center">
-              <CoatHangerIcon size={80} strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
-            </div>
-            <h3 style={{ color: 'var(--text-primary)' }} className="text-xl font-semibold mb-2">
-              Your closet is empty
-            </h3>
-            <p style={{ color: 'var(--text-secondary)' }} className="mb-6">
-              Start by adding some clothing items to your digital wardrobe
-            </p>
+          <div className="text-center py-20">
+            <p className="text-xs uppercase tracking-widest text-gray-400 mb-6">Your collection is empty</p>
             <Link
               href="/upload"
-              style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
-              className="inline-block px-4 py-2 text-white rounded-lg font-medium transition-all hover:shadow-lg"
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
+              className="inline-block px-8 py-3 border border-black text-black text-xs uppercase tracking-widest hover:bg-black hover:text-white transition-colors"
             >
-              Add Your First Item
+              Add First Item
             </Link>
           </div>
         )}
@@ -263,58 +382,124 @@ export default function ClosetPage() {
         {/* Items Grid */}
         {!isLoading && !error && items.length > 0 && (
           <div>
-            <div style={{ color: 'var(--text-secondary)' }} className="mb-4 text-sm">
-              Showing {items.length} {items.length === 1 ? 'item' : 'items'}
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => handleItemClick(item)}
-                  className="bg-white border-2 border-black rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-                >
-                  <div className="aspect-square relative bg-white">
-                    <img
-                      src={item.background_removed_url || item.thumbnail_url}
-                      alt={`${item.category} item`}
-                      className="w-full h-full object-contain"
-                    />
-                    {item.favorite && (
-                      <div className="absolute top-2 right-2">
-                        <Star
-                          size={24}
-                          fill="var(--accent-primary)"
-                          stroke="var(--accent-primary)"
-                          strokeWidth={1.5}
-                        />
+            <p className="text-xs text-gray-400 mb-6">
+              {items.length} {items.length === 1 ? 'item' : 'items'}
+            </p>
+
+            {selectedCategory === "all" ? (
+              // Grouped view by category
+              <div className="space-y-8">
+                {categoryOrder.map((cat) => {
+                  const categoryItems = items
+                    .filter(item => item.category === cat)
+                    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+
+                  if (categoryItems.length === 0) return null;
+
+                  const IconComponent = categoryIcons[cat];
+                  return (
+                    <div key={cat}>
+                      <h3 className="text-sm font-bold uppercase tracking-widest text-black mb-4 flex items-center gap-2">
+                        <IconComponent size={18} strokeWidth={1.5} />
+                        {categoryLabels[cat]}
+                      </h3>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                        {categoryItems.map((item) => (
+                          <div
+                            key={item.id}
+                            onClick={() => handleItemClick(item)}
+                            className="group cursor-pointer"
+                          >
+                            <div className="aspect-square relative bg-gray-50 mb-3 overflow-hidden">
+                              <img
+                                src={getImageUrl(item, 200)}
+                                alt={`${item.category} item`}
+                                className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                              />
+                              {item.favorite && (
+                                <div className="absolute top-2 right-2">
+                                  <Star
+                                    size={16}
+                                    fill="black"
+                                    stroke="black"
+                                    strokeWidth={1.5}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
+                                {item.subcategory || item.category}
+                              </p>
+                              {item.brand && (
+                                <p className="text-sm truncate">{item.brand}</p>
+                              )}
+                              {item.color && (
+                                <p className="text-xs text-gray-400 truncate">{item.color}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    )}
-                  </div>
-                  <div className="p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span style={{ color: 'var(--accent-primary)' }} className="text-xs font-medium capitalize">
-                        {item.subcategory || item.category}
-                      </span>
-                      {item.times_worn > 0 && (
-                        <span style={{ color: 'var(--text-secondary)' }} className="text-xs">
-                          Worn {item.times_worn}x
-                        </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              // Single category view
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {items
+                  .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
+                  .map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => handleItemClick(item)}
+                    className="group cursor-pointer"
+                  >
+                    <div className="aspect-square relative bg-gray-50 mb-3 overflow-hidden">
+                      <img
+                        src={getImageUrl(item, 200)}
+                        alt={`${item.category} item`}
+                        className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                      />
+                      {item.favorite && (
+                        <div className="absolute top-2 right-2">
+                          <Star
+                            size={16}
+                            fill="black"
+                            stroke="black"
+                            strokeWidth={1.5}
+                          />
+                        </div>
                       )}
                     </div>
-                    {item.brand && (
-                      <p style={{ color: 'var(--text-primary)' }} className="text-sm truncate">
-                        {item.brand}
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
+                        {item.subcategory || item.category}
                       </p>
-                    )}
-                    {item.color && (
-                      <p style={{ color: 'var(--text-secondary)' }} className="text-xs truncate">
-                        {item.color}
-                      </p>
-                    )}
+                      {item.brand && (
+                        <p className="text-sm truncate">{item.brand}</p>
+                      )}
+                      {item.color && (
+                        <p className="text-xs text-gray-400 truncate">{item.color}</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Delete All Button */}
+        {items.length > 0 && (
+          <div className="mt-12 pb-8 text-center">
+            <button
+              onClick={handleDeleteAll}
+              className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+            >
+              Delete All Items ({items.length})
+            </button>
           </div>
         )}
       </main>
@@ -322,125 +507,209 @@ export default function ClosetPage() {
       {/* Item Detail/Edit Modal */}
       {selectedItem && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           onClick={() => {
             setSelectedItem(null);
             setIsEditMode(false);
+            setShowItemDetails(false);
           }}
         >
           <div
-            className="bg-white border-2 border-black rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white max-w-md w-full max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div className="bg-white border-b-2 border-black sticky top-0 p-4 flex justify-between items-center">
-              <h2 style={{ color: 'var(--text-primary)' }} className="text-xl font-bold">
-                {isEditMode ? "Edit Item" : "Item Details"}
-              </h2>
-              <button
-                onClick={() => {
-                  setSelectedItem(null);
-                  setIsEditMode(false);
-                }}
-                style={{ color: 'var(--text-secondary)' }}
-                className="hover:opacity-70 text-2xl"
-              >
-                ×
-              </button>
-            </div>
+            {/* Main View - Image + Actions */}
+            {!showItemDetails && !isEditMode && (
+              <div className="p-6">
+                {/* Centered Image - No border */}
+                <div className="flex justify-center mb-4">
+                  <img
+                    src={getImageUrl(selectedItem)}
+                    alt={`${selectedItem.category} item`}
+                    className="max-h-80 object-contain"
+                  />
+                </div>
 
-            {/* Modal Content */}
-            <div className="p-6">
-              {/* Image */}
-              <div className="bg-white rounded-lg p-4 mb-6 border-2 border-black">
-                <img
-                  src={selectedItem.background_removed_url || selectedItem.original_image_url}
-                  alt={`${selectedItem.category} item`}
-                  className="w-full max-h-96 object-contain"
-                />
+                {/* Rotation Controls */}
+                <div className="flex justify-center gap-6 mb-6">
+                  <button
+                    onClick={async () => {
+                      const newRotation = ((selectedItem.rotation || 0) - 90 + 360) % 360;
+                      // Update in DB
+                      await fetch('/api/update-item', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          itemId: selectedItem.id,
+                          userId: 'default-user',
+                          category: selectedItem.category,
+                          subcategory: selectedItem.subcategory,
+                          color: selectedItem.color,
+                          brand: selectedItem.brand,
+                          size: selectedItem.size,
+                          cost: selectedItem.cost,
+                          date_purchased: selectedItem.date_purchased,
+                          store_purchased_from: selectedItem.store_purchased_from,
+                          rotation: newRotation,
+                        }),
+                      });
+                      // Update local state
+                      const updatedItem = { ...selectedItem, rotation: newRotation };
+                      setSelectedItem(updatedItem);
+                      setItems(items.map(item =>
+                        item.id === selectedItem.id ? updatedItem : item
+                      ));
+                    }}
+                    className="p-2 text-gray-400 hover:text-black transition-colors"
+                    title="Rotate left"
+                  >
+                    <RotateCcw size={20} strokeWidth={1.5} />
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const newRotation = ((selectedItem.rotation || 0) + 90) % 360;
+                      // Update in DB
+                      await fetch('/api/update-item', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          itemId: selectedItem.id,
+                          userId: 'default-user',
+                          category: selectedItem.category,
+                          subcategory: selectedItem.subcategory,
+                          color: selectedItem.color,
+                          brand: selectedItem.brand,
+                          size: selectedItem.size,
+                          cost: selectedItem.cost,
+                          date_purchased: selectedItem.date_purchased,
+                          store_purchased_from: selectedItem.store_purchased_from,
+                          rotation: newRotation,
+                        }),
+                      });
+                      // Update local state
+                      const updatedItem = { ...selectedItem, rotation: newRotation };
+                      setSelectedItem(updatedItem);
+                      setItems(items.map(item =>
+                        item.id === selectedItem.id ? updatedItem : item
+                      ));
+                    }}
+                    className="p-2 text-gray-400 hover:text-black transition-colors"
+                    title="Rotate right"
+                  >
+                    <RotateCw size={20} strokeWidth={1.5} />
+                  </button>
+                </div>
+
+                {/* Create Outfit Button */}
+                <button
+                  className="w-full py-4 bg-black text-white text-xs uppercase tracking-widest hover:bg-gray-900 transition-colors mb-6"
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <Sparkles size={16} strokeWidth={1.5} />
+                    Create Outfit
+                  </div>
+                </button>
+
+                {/* Action Bar */}
+                <div className="flex justify-center gap-8">
+                  {/* Back to Closet */}
+                  <button
+                    onClick={() => {
+                      setSelectedItem(null);
+                      setShowItemDetails(false);
+                    }}
+                    className="flex flex-col items-center gap-2 text-gray-500 hover:text-black transition-colors"
+                  >
+                    <Home size={24} strokeWidth={1.5} />
+                    <span className="text-xs">Closet</span>
+                  </button>
+
+                  {/* View Details */}
+                  <button
+                    onClick={() => setShowItemDetails(true)}
+                    className="flex flex-col items-center gap-2 text-gray-500 hover:text-black transition-colors"
+                  >
+                    <Info size={24} strokeWidth={1.5} />
+                    <span className="text-xs">Details</span>
+                  </button>
+                </div>
               </div>
+            )}
 
-              {/* View Mode */}
-              {!isEditMode && (
+            {/* Details View */}
+            {showItemDetails && !isEditMode && (
+              <div className="p-6">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-6">
+                  <button
+                    onClick={() => setShowItemDetails(false)}
+                    className="text-gray-400 hover:text-black transition-colors"
+                  >
+                    ← Back
+                  </button>
+                  <div className="flex gap-4">
+                    <button
+                      onClick={() => setIsEditMode(true)}
+                      className="text-black hover:opacity-70 transition-opacity"
+                    >
+                      <Pencil size={20} strokeWidth={1.5} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteItem(selectedItem.id)}
+                      className="text-black hover:opacity-70 transition-opacity"
+                    >
+                      <Trash2 size={20} strokeWidth={1.5} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Details Content */}
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    {/* Category */}
                     <div>
-                      <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
-                        Category
-                      </label>
-                      <p style={{ color: 'var(--text-primary)' }} className="text-lg capitalize">
-                        {selectedItem.category}
-                      </p>
+                      <label className="text-xs uppercase tracking-wider text-gray-400">Category</label>
+                      <p className="text-sm capitalize">{selectedItem.category}</p>
                     </div>
 
-                    {/* Subcategory */}
                     {selectedItem.subcategory && (
                       <div>
-                        <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
-                          Type
-                        </label>
-                        <p style={{ color: 'var(--text-primary)' }} className="text-lg capitalize">
-                          {selectedItem.subcategory}
-                        </p>
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Type</label>
+                        <p className="text-sm capitalize">{selectedItem.subcategory}</p>
                       </div>
                     )}
 
-                    {/* Brand */}
                     {selectedItem.brand && (
                       <div>
-                        <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
-                          Brand
-                        </label>
-                        <p style={{ color: 'var(--text-primary)' }} className="text-lg">
-                          {selectedItem.brand}
-                        </p>
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Brand</label>
+                        <p className="text-sm">{selectedItem.brand}</p>
                       </div>
                     )}
 
-                    {/* Color */}
                     {selectedItem.color && (
                       <div>
-                        <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
-                          Color
-                        </label>
-                        <p style={{ color: 'var(--text-primary)' }} className="text-lg capitalize">
-                          {selectedItem.color}
-                        </p>
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Color</label>
+                        <p className="text-sm capitalize">{selectedItem.color}</p>
                       </div>
                     )}
 
-                    {/* Size */}
                     {selectedItem.size && (
                       <div>
-                        <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
-                          Size
-                        </label>
-                        <p style={{ color: 'var(--text-primary)' }} className="text-lg">
-                          {selectedItem.size}
-                        </p>
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Size</label>
+                        <p className="text-sm">{selectedItem.size}</p>
                       </div>
                     )}
 
-                    {/* Cost */}
                     {selectedItem.cost && (
                       <div>
-                        <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
-                          Cost
-                        </label>
-                        <p style={{ color: 'var(--text-primary)' }} className="text-lg">
-                          ${selectedItem.cost.toFixed(2)}
-                        </p>
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Cost</label>
+                        <p className="text-sm">${selectedItem.cost.toFixed(2)}</p>
                       </div>
                     )}
 
-                    {/* Date Purchased */}
                     {selectedItem.date_purchased && (
                       <div>
-                        <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
-                          Purchased
-                        </label>
-                        <p style={{ color: 'var(--text-primary)' }} className="text-lg">
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Purchased</label>
+                        <p className="text-sm">
                           {new Date(selectedItem.date_purchased).toLocaleDateString('en-US', {
                             year: 'numeric',
                             month: 'short',
@@ -450,37 +719,31 @@ export default function ClosetPage() {
                       </div>
                     )}
 
-                    {/* Store Purchased From */}
                     {selectedItem.store_purchased_from && (
                       <div>
-                        <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
-                          Store
-                        </label>
-                        <p style={{ color: 'var(--text-primary)' }} className="text-lg">
-                          {selectedItem.store_purchased_from}
-                        </p>
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Store</label>
+                        <p className="text-sm">{selectedItem.store_purchased_from}</p>
                       </div>
                     )}
 
-                    {/* Times Worn */}
+                    {selectedItem.original_filename && (
+                      <div>
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Filename</label>
+                        <p className="text-sm truncate" title={selectedItem.original_filename}>{selectedItem.original_filename}</p>
+                      </div>
+                    )}
+
                     <div>
-                      <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
-                        Times Worn
-                      </label>
-                      <p style={{ color: 'var(--text-primary)' }} className="text-lg">
-                        {selectedItem.times_worn} times
-                      </p>
+                      <label className="text-xs uppercase tracking-wider text-gray-400">Times Worn</label>
+                      <p className="text-sm">{selectedItem.times_worn}</p>
                     </div>
 
-                    {/* Favorite */}
                     <div>
-                      <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
-                        Favorite
-                      </label>
-                      <p style={{ color: 'var(--text-primary)' }} className="text-lg flex items-center gap-2">
+                      <label className="text-xs uppercase tracking-wider text-gray-400">Favorite</label>
+                      <p className="text-sm flex items-center gap-1">
                         {selectedItem.favorite ? (
                           <>
-                            <Star size={20} fill="var(--accent-primary)" stroke="var(--accent-primary)" strokeWidth={1.5} />
+                            <Star size={14} fill="black" stroke="black" strokeWidth={1.5} />
                             Yes
                           </>
                         ) : "No"}
@@ -488,12 +751,9 @@ export default function ClosetPage() {
                     </div>
                   </div>
 
-                  {/* Created Date */}
-                  <div>
-                    <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
-                      Added to Closet
-                    </label>
-                    <p style={{ color: 'var(--text-primary)' }} className="text-lg">
+                  <div className="pt-4 border-t border-gray-100">
+                    <label className="text-xs uppercase tracking-wider text-gray-400">Added</label>
+                    <p className="text-sm">
                       {new Date(selectedItem.created_at).toLocaleDateString('en-US', {
                         year: 'numeric',
                         month: 'long',
@@ -502,39 +762,34 @@ export default function ClosetPage() {
                     </p>
                   </div>
 
-                  {/* Item ID */}
                   <div>
-                    <label style={{ color: 'var(--text-secondary)' }} className="text-sm font-medium">
-                      Item ID
-                    </label>
-                    <p style={{ color: 'var(--text-primary)' }} className="text-sm font-mono">
-                      {selectedItem.id}
-                    </p>
+                    <label className="text-xs uppercase tracking-wider text-gray-400">Item ID</label>
+                    <p className="text-xs font-mono text-gray-400">{selectedItem.id}</p>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Edit Mode */}
-              {isEditMode && (
-                <div className="space-y-4">
-                  {/* Category */}
-                  <div>
-                    <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">
-                      Category *
-                    </label>
-                    <select
-                      value={editCategory}
-                      onChange={(e) => setEditCategory(e.target.value as Category)}
-                      style={{ color: 'var(--text-primary)' }}
-                      className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
-                    >
-                      {fullCategories.map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+            {/* Edit Mode */}
+            {isEditMode && (
+              <div className="p-6 space-y-4">
+                {/* Category */}
+                <div>
+                  <label className="block text-xs uppercase tracking-wider text-gray-500 mb-2">
+                    Category
+                  </label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value as Category)}
+                    className="w-full px-4 py-3 border border-gray-300 bg-white text-sm focus:border-black focus:outline-none transition-colors"
+                  >
+                    {fullCategories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                   {/* Subcategory */}
                   <div>
@@ -626,69 +881,43 @@ export default function ClosetPage() {
                     />
                   </div>
 
-                  {/* Store Purchased From */}
-                  <div>
-                    <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">
-                      Store Purchased From
-                    </label>
-                    <input
-                      type="text"
-                      value={editStorePurchasedFrom}
-                      onChange={(e) => setEditStorePurchasedFrom(e.target.value)}
-                      placeholder="e.g., Amazon, Nordstrom"
-                      style={{ color: 'var(--text-primary)' }}
-                      className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
-                    />
-                  </div>
+                {/* Store Purchased From */}
+                <div>
+                  <label className="block text-xs uppercase tracking-wider text-gray-500 mb-2">
+                    Store
+                  </label>
+                  <input
+                    type="text"
+                    value={editStorePurchasedFrom}
+                    onChange={(e) => setEditStorePurchasedFrom(e.target.value)}
+                    placeholder="e.g., Amazon, Nordstrom"
+                    className="w-full px-4 py-3 border border-gray-300 bg-white text-sm focus:border-black focus:outline-none transition-colors"
+                  />
                 </div>
-              )}
 
-              {/* Action Buttons */}
-              <div className="mt-6 flex gap-4">
-                {!isEditMode ? (
-                  <>
-                    <button
-                      style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
-                      className="flex-1 px-4 py-2 text-white rounded-lg font-medium transition-all hover:shadow-lg"
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
-                      onClick={() => setIsEditMode(true)}
-                    >
-                      Edit Details
-                    </button>
-                    <button
-                      className="px-4 py-2 bg-white hover:bg-red-50 rounded-lg transition-colors border-2 border-black"
-                      onClick={() => handleDeleteItem(selectedItem.id)}
-                      title="Delete Item"
-                    >
-                      <Trash2 size={20} strokeWidth={1.5} style={{ color: 'var(--status-error)' }} />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
-                      className="flex-1 px-4 py-2 text-white rounded-lg font-medium transition-all hover:shadow-lg"
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
-                      onClick={() => {
-                        // TODO: Implement save
-                        alert('Save functionality coming soon!');
-                        setIsEditMode(false);
-                      }}
-                    >
-                      Save Changes
-                    </button>
-                    <button
-                      className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
-                      onClick={() => setIsEditMode(false)}
-                    >
-                      Cancel
-                    </button>
-                  </>
-                )}
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4">
+                  <button
+                    className={`flex-1 py-3 text-xs uppercase tracking-widest transition-colors ${
+                      isSaving
+                        ? 'bg-gray-400 text-white cursor-not-allowed'
+                        : 'bg-black text-white hover:bg-gray-900'
+                    }`}
+                    onClick={handleSaveEdit}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    className="flex-1 py-3 border border-gray-300 text-xs uppercase tracking-widest hover:bg-gray-50 transition-colors"
+                    onClick={() => setIsEditMode(false)}
+                    disabled={isSaving}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}

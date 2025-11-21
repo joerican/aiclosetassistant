@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { Category } from "@/types";
-import { Upload, Camera } from "lucide-react";
+import { Upload, Camera, ArrowLeft, RotateCcw, RotateCw, Trash2 } from "lucide-react";
+import Logo from "../components/Logo";
 
 // Size options based on category and subcategory
 const sizeOptions = {
@@ -31,24 +32,74 @@ const sizeOptions = {
   },
 };
 
+// Color with percentage and RGB for palette display
+interface ColorWithPercent {
+  name: string;
+  percent: number;
+  rgb?: [number, number, number];
+}
+
+// Type for queued items
+interface QueuedItem {
+  id: string;
+  file: File;
+  preview: string;
+  status: 'pending' | 'processing' | 'ready' | 'uploading' | 'done' | 'error';
+  processedPreview?: string;
+  processedImage?: Blob | null;  // null when stored in R2
+  itemId?: string;  // Server-assigned item ID
+  imageUrl?: string;  // R2 image URL
+  imageHash?: string;  // Perceptual hash
+  rotation?: number;  // Per-item rotation
+  isDuplicate?: boolean;  // Flag for duplicate items
+  duplicateInfo?: {  // Info about existing item
+    subcategory?: string;
+    color?: string;
+    brand?: string;
+  };
+  metadata?: {
+    category?: string;
+    subcategory?: string;
+    colors?: string[] | ColorWithPercent[];
+    brand?: string;
+    description?: string;
+    tags?: string[];
+  };
+  error?: string;
+}
+
 export default function UploadPage() {
+  // Queue state for multiple images
+  const [imageQueue, setImageQueue] = useState<QueuedItem[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const currentIndexRef = useRef(0);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
+
+  // Legacy single-file states (used for current item display)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string>("");
   const [processedPreview, setProcessedPreview] = useState<string>("");
-  const [processedImage512, setProcessedImage512] = useState<Blob | null>(null);
-  const [thumbnailImage200, setThumbnailImage200] = useState<Blob | null>(null);
+  const [processedImage, setProcessedImage] = useState<Blob | null>(null);  // Single PNG
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+
   const [aiMetadata, setAiMetadata] = useState<{
     category?: string;
     subcategory?: string;
-    colors?: string[];
+    colors?: string[] | ColorWithPercent[];
     brand?: string;
     description?: string;
     tags?: string[];
   } | null>(null);
+
+  // Color palette state (max 8 colors with percentages)
+  const [colorPalette, setColorPalette] = useState<ColorWithPercent[]>([]);
 
   // Required fields
   const [category, setCategory] = useState<Category>("tops");
@@ -70,11 +121,119 @@ export default function UploadPage() {
   const [storePurchasedFrom, setStorePurchasedFrom] = useState<string>("");
 
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [rotation, setRotation] = useState(0);
+
+  // Batch processing state
+  const [totalToProcess, setTotalToProcess] = useState(0);
+  const [processedCount, setProcessedCount] = useState(0);
+  const [allProcessingComplete, setAllProcessingComplete] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  const rotateLeft = () => {
+    const newRotation = (rotation - 90 + 360) % 360;
+    setRotation(newRotation);
+    // Save to queue item
+    setImageQueue(prev => prev.map((q, idx) =>
+      idx === currentIndex ? { ...q, rotation: newRotation } : q
+    ));
+  };
+  const rotateRight = () => {
+    const newRotation = (rotation + 90) % 360;
+    setRotation(newRotation);
+    // Save to queue item
+    setImageQueue(prev => prev.map((q, idx) =>
+      idx === currentIndex ? { ...q, rotation: newRotation } : q
+    ));
+  };
+
+  // Apply rotation to image blob
+  const applyRotation = async (imageBlob: Blob, degrees: number): Promise<Blob> => {
+    if (degrees === 0) return imageBlob;
+
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      img.onload = () => {
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+
+        // Swap dimensions for 90/270 degree rotations
+        if (degrees === 90 || degrees === 270) {
+          canvas.width = img.height;
+          canvas.height = img.width;
+        } else {
+          canvas.width = img.width;
+          canvas.height = img.height;
+        }
+
+        // Move to center, rotate, draw
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((degrees * Math.PI) / 180);
+        ctx.drawImage(img, -img.width / 2, -img.height / 2);
+
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(img.src);
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Failed to create rotated blob'));
+          }
+        }, 'image/png');
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src);
+        reject(new Error('Failed to load image for rotation'));
+      };
+
+      img.src = URL.createObjectURL(imageBlob);
+    });
+  };
+
   const categories: Category[] = ["tops", "bottoms", "shoes", "outerwear", "accessories"];
+
+  // Convert color name to hex code for display
+  const colorNameToHex = (name: string): string => {
+    const colors: Record<string, string> = {
+      black: '#000000',
+      white: '#FFFFFF',
+      gray: '#808080',
+      grey: '#808080',
+      red: '#EF4444',
+      blue: '#3B82F6',
+      navy: '#1E3A5A',
+      green: '#22C55E',
+      yellow: '#EAB308',
+      orange: '#F97316',
+      pink: '#EC4899',
+      purple: '#A855F7',
+      brown: '#92400E',
+      beige: '#D4B896',
+      tan: '#D2B48C',
+      cream: '#FFFDD0',
+      ivory: '#FFFFF0',
+      gold: '#FFD700',
+      silver: '#C0C0C0',
+      maroon: '#800000',
+      burgundy: '#800020',
+      olive: '#808000',
+      teal: '#008080',
+      coral: '#FF7F50',
+      turquoise: '#40E0D0',
+      lavender: '#E6E6FA',
+      charcoal: '#36454F',
+      khaki: '#C3B091',
+      denim: '#1560BD',
+      mint: '#98FF98',
+    };
+    return colors[name.toLowerCase()] || '#808080';
+  };
 
   const subcategoryOptions: Record<Category, string[]> = {
     tops: ["t-shirt", "shirt", "blouse", "sweater", "hoodie", "tank top", "cardigan", "polo"],
@@ -108,31 +267,435 @@ export default function UploadPage() {
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && file.type.startsWith("image/")) {
-      setSelectedFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreview(reader.result as string);
-        setProcessedPreview("");
-      };
-      reader.readAsDataURL(file);
-      analyzeAndProcessImage(file);
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const newItems: QueuedItem[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.type.startsWith("image/")) {
+        const preview = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+
+        newItems.push({
+          id: `${Date.now()}-${i}`,
+          file,
+          preview,
+          status: 'pending'
+        });
+      }
+    }
+
+    if (newItems.length > 0) {
+      setImageQueue(newItems);
+      setCurrentIndex(0);
+      // Set up batch processing state
+      setTotalToProcess(newItems.length);
+      setProcessedCount(0);
+      setAllProcessingComplete(false);
+      // Show first item preview while processing
+      setSelectedFile(newItems[0].file);
+      setPreview(newItems[0].preview);
+      setProcessedPreview("");
+      setIsProcessing(true);
+      setIsAnalyzing(true);
+      // Start processing all items in background
+      processQueueInBackground(newItems);
     }
   };
 
   const handleCameraSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith("image/")) {
-      setSelectedFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreview(reader.result as string);
-        setProcessedPreview("");
+      const preview = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+
+      const newItem: QueuedItem = {
+        id: `${Date.now()}`,
+        file,
+        preview,
+        status: 'pending'
       };
-      reader.readAsDataURL(file);
-      analyzeAndProcessImage(file);
+
+      setImageQueue([newItem]);
+      setCurrentIndex(0);
+      // Set up batch processing state
+      setTotalToProcess(1);
+      setProcessedCount(0);
+      setAllProcessingComplete(false);
+      // Show item while processing
+      setSelectedFile(file);
+      setPreview(preview);
+      setProcessedPreview("");
+      setIsProcessing(true);
+      setIsAnalyzing(true);
+      processQueueInBackground([newItem]);
     }
+  };
+
+  // Process all items in background with parallel batches
+  const processQueueInBackground = async (items: QueuedItem[]) => {
+    console.log('[Queue] Starting processing of', items.length, 'items');
+    let successCount = 0;
+    let completedCount = 0;
+    const BATCH_SIZE = 6; // Process 6 items concurrently
+
+    // Process in batches of BATCH_SIZE
+    for (let batchStart = 0; batchStart < items.length; batchStart += BATCH_SIZE) {
+      const batch = items.slice(batchStart, batchStart + BATCH_SIZE);
+      console.log('[Queue] Processing batch starting at', batchStart, 'with', batch.length, 'items');
+
+      // Mark all items in batch as processing
+      setImageQueue(prev => prev.map(q => {
+        if (batch.some(b => b.id === q.id)) {
+          return { ...q, status: 'processing' };
+        }
+        return q;
+      }));
+
+      // Process batch in parallel
+      const batchPromises = batch.map(async (item, batchIdx) => {
+        const itemNum = batchStart + batchIdx + 1;
+        try {
+          addLog(`Processing item ${itemNum}...`);
+          const result = await processItemInBackground(item);
+          console.log('[Queue] Item', itemNum, 'completed successfully');
+          addLog(`Item ${itemNum} ✓`);
+
+          // Update with results
+          const updatedItem = { ...item, ...result, status: 'ready' as const };
+          setImageQueue(prev => prev.map(q =>
+            q.id === item.id ? updatedItem : q
+          ));
+
+          return { success: true, item: updatedItem };
+        } catch (error) {
+          console.error('[Queue] Error processing item', itemNum, ':', error);
+          const errorMessage = String(error);
+          const isSkipped = errorMessage.includes('Duplicate skipped');
+
+          if (isSkipped) {
+            addLog(`Item ${itemNum} skipped (duplicate)`);
+          } else {
+            addLog(`Item ${itemNum} ✗ error`);
+          }
+
+          setImageQueue(prev => prev.map(q =>
+            q.id === item.id ? { ...q, status: 'error', error: errorMessage } : q
+          ));
+
+          return { success: false, error: errorMessage };
+        }
+      });
+
+      // Wait for all items in batch to complete
+      const results = await Promise.all(batchPromises);
+
+      // Update counts
+      const batchSuccesses = results.filter(r => r.success).length;
+      successCount += batchSuccesses;
+      completedCount += batch.length;
+      setProcessedCount(completedCount);
+
+      console.log('[Queue] Batch complete:', batchSuccesses, 'successful,', completedCount, 'total processed');
+    }
+
+    console.log('[Queue] All items processed:', successCount, 'successful of', items.length);
+
+    // Mark all processing complete
+    setAllProcessingComplete(true);
+    setIsProcessing(false);
+    setIsAnalyzing(false);
+
+    // Find first ready item and show it
+    // Need to get the latest queue state
+    setImageQueue(prev => {
+      const firstReadyIdx = prev.findIndex(item => item.status === 'ready');
+      console.log('[Queue] Looking for first ready item, found at index:', firstReadyIdx);
+
+      if (firstReadyIdx >= 0) {
+        const readyItem = prev[firstReadyIdx];
+        console.log('[Queue] Showing first ready item:', readyItem.id);
+
+        // Use setTimeout to ensure state updates happen after this setter completes
+        setTimeout(() => {
+          setCurrentIndex(firstReadyIdx);
+          updateDisplayFromQueueItem(readyItem);
+          setShowConfirmation(true);
+        }, 0);
+      } else {
+        console.log('[Queue] No ready items found - all failed or skipped');
+        setTimeout(() => {
+          setShowConfirmation(false);
+          // Reset if nothing to show
+          setSelectedFile(null);
+          setPreview("");
+          alert('All items failed to process or were skipped.');
+        }, 0);
+      }
+      return prev;
+    });
+  };
+
+  // Processing log for UI
+  const [processingLog, setProcessingLog] = useState<string[]>([]);
+
+  const addLog = (message: string) => {
+    setProcessingLog(prev => [...prev.slice(-9), message]); // Keep last 10 messages
+  };
+
+  // Process a single item and return results
+  const processItemInBackground = async (item: QueuedItem): Promise<Partial<QueuedItem>> => {
+    try {
+      // Client resize to 600px JPEG (fast upload)
+      const resizedBlob = await resizeImage(item.file, 600, 0.85, 'image/jpeg');
+
+      // Compute hash for duplicate detection
+      const imageHash = await hashImageFile(item.file);
+
+      // Check for duplicates before processing
+      const duplicateResult = await checkDuplicate(imageHash);
+      let isDuplicate = false;
+      let duplicateInfo = undefined;
+
+      if (duplicateResult.duplicate && duplicateResult.existingItem) {
+        isDuplicate = true;
+        duplicateInfo = {
+          subcategory: duplicateResult.existingItem.subcategory,
+          color: duplicateResult.existingItem.color,
+          brand: duplicateResult.existingItem.brand,
+        };
+      }
+
+      // Send to server for BG removal + AI analysis
+      const formData = new FormData();
+      formData.append('image', new File([resizedBlob], 'image.jpg', { type: 'image/jpeg' }));
+      formData.append('imageHash', imageHash);
+      formData.append('userId', 'default-user');
+
+      const response = await fetch('/api/process-item', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Processing failed');
+      }
+
+      const result = await response.json();
+
+      // Server stores image in R2, just use the URL for preview
+      const processedPreview = result.imageUrl;
+
+      return {
+        metadata: result.metadata,
+        processedPreview,
+        processedImage: null, // Image already in R2
+        itemId: result.itemId,
+        imageUrl: result.imageUrl,
+        imageHash: result.imageHash,
+        isDuplicate,
+        duplicateInfo,
+      } as Partial<QueuedItem> & { itemId: string; imageUrl: string; imageHash: string };
+    } catch (error) {
+      console.error('Error in processItemInBackground:', error);
+      throw error;
+    }
+  };
+
+  // Update display state from queue item
+  const updateDisplayFromQueueItem = (item: QueuedItem) => {
+    setSelectedFile(item.file);
+    setPreview(item.preview);
+    setProcessedPreview(item.processedPreview || "");
+    setProcessedImage(item.processedImage || null);
+    setShowConfirmation(item.status === 'ready');
+    setIsProcessing(item.status === 'processing');
+    setIsAnalyzing(item.status === 'processing');
+    setRotation(item.rotation || 0);  // Load rotation from item
+
+    // Apply metadata to form fields
+    if (item.metadata) {
+      setAiMetadata(item.metadata);
+      if (item.metadata.category && categories.includes(item.metadata.category as Category)) {
+        const aiCategory = item.metadata.category as Category;
+        setCategory(aiCategory);
+
+        if (item.metadata.subcategory) {
+          const aiSubcategory = item.metadata.subcategory.toLowerCase();
+          // Priority: exact match > starts with option > AI contains option > option contains AI
+          const matches = subcategoryOptions[aiCategory]
+            .map(option => {
+              const optLower = option.toLowerCase();
+              if (optLower === aiSubcategory) return { option, score: 4 };
+              if (aiSubcategory.startsWith(optLower)) return { option, score: 3, len: optLower.length };
+              if (aiSubcategory.includes(optLower)) return { option, score: 2, len: optLower.length };
+              if (optLower.includes(aiSubcategory)) return { option, score: 1 };
+              return null;
+            })
+            .filter(Boolean)
+            .sort((a, b) => {
+              if (b!.score !== a!.score) return b!.score - a!.score;
+              // For same score, prefer longer matches (more specific)
+              return ((b as any).len || 0) - ((a as any).len || 0);
+            });
+
+          if (matches.length > 0) {
+            setSubcategory(matches[0]!.option);
+            setCustomSubcategory("");
+          } else {
+            setSubcategory("Other");
+            setCustomSubcategory(item.metadata.subcategory);
+          }
+        }
+      }
+      if (item.metadata.colors && item.metadata.colors.length > 0) {
+        // Handle both old string array and new ColorWithPercent array
+        const colorsArray = item.metadata.colors;
+        if (typeof colorsArray[0] === 'object' && 'name' in colorsArray[0]) {
+          // New format with percentages
+          const colorObjs = colorsArray as ColorWithPercent[];
+          setColorPalette(colorObjs);
+          const colorNames = colorObjs.map(c =>
+            c.name.charAt(0).toUpperCase() + c.name.slice(1).toLowerCase()
+          );
+          setColors(colorNames.join(", "));
+        } else {
+          // Old format - just strings
+          const colorStrings = colorsArray as string[];
+          const capitalizedColors = colorStrings.map(
+            (c: string) => c.charAt(0).toUpperCase() + c.slice(1).toLowerCase()
+          );
+          setColors(capitalizedColors.join(", "));
+          // Convert to palette format with equal percentages
+          const percent = Math.floor(100 / colorStrings.length);
+          setColorPalette(colorStrings.map((c, i) => ({
+            name: c,
+            percent: i === colorStrings.length - 1 ? 100 - (percent * (colorStrings.length - 1)) : percent
+          })));
+        }
+      } else if ((item.metadata as any).color_details) {
+        // Fallback: extract colors from color_details if colors array is empty
+        const colorDetails = (item.metadata as any).color_details;
+        const extractedColors: string[] = [];
+        if (colorDetails.primary) extractedColors.push(colorDetails.primary);
+        if (colorDetails.secondary) extractedColors.push(colorDetails.secondary);
+        if (colorDetails.accent) extractedColors.push(colorDetails.accent);
+
+        if (extractedColors.length > 0) {
+          const capitalizedColors = extractedColors.map(
+            (c: string) => c.charAt(0).toUpperCase() + c.slice(1).toLowerCase()
+          );
+          setColors(capitalizedColors.join(", "));
+          const percent = Math.floor(100 / extractedColors.length);
+          setColorPalette(extractedColors.map((c, i) => ({
+            name: c,
+            percent: i === extractedColors.length - 1 ? 100 - (percent * (extractedColors.length - 1)) : percent
+          })));
+        }
+      }
+      if (item.metadata.brand) {
+        setBrand(item.metadata.brand);
+      }
+      if (item.metadata.description) {
+        setDescription(item.metadata.description);
+      }
+    } else {
+      // Reset form fields
+      setAiMetadata(null);
+      setCategory("tops");
+      setSubcategory("");
+      setCustomSubcategory("");
+      setColors("");
+      setColorPalette([]);
+      setBrand("");
+      setDescription("");
+    }
+  };
+
+  // Move to next item in queue after successful upload
+  const moveToNextItem = () => {
+    const nextIndex = currentIndex + 1;
+
+    // Collapse optional fields and scroll to top for next item
+    setShowOptionalFields(false);
+    setRotation(0);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (nextIndex < imageQueue.length) {
+      setCurrentIndex(nextIndex);
+      const nextItem = imageQueue[nextIndex];
+      updateDisplayFromQueueItem(nextItem);
+    } else {
+      // All done - reset everything
+      setImageQueue([]);
+      setCurrentIndex(0);
+      setSelectedFile(null);
+      setPreview("");
+      setProcessedPreview("");
+      setShowConfirmation(false);
+    }
+  };
+
+  // Analyze image for queue (returns metadata without updating state)
+  const analyzeImageForQueue = async (imageFile: File | Blob): Promise<QueuedItem['metadata']> => {
+    try {
+      const formData = new FormData();
+      // Convert Blob to File if needed
+      const file = imageFile instanceof File
+        ? imageFile
+        : new File([imageFile], 'processed.png', { type: 'image/png' });
+      formData.append('image', file);
+      const response = await fetch('/api/analyze-image', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) return undefined;
+      const result = await response.json();
+      return result.success ? result.metadata : undefined;
+    } catch (error) {
+      console.error("Error analyzing image:", error);
+      return undefined;
+    }
+  };
+
+  // Remove background for queue (takes pre-resized blob)
+  const removeBackgroundForQueueWithBlob = async (resizedBlob: Blob): Promise<{
+    processedPreview: string;
+    processedImage: Blob;
+  }> => {
+    // Send to server for background removal
+    const formData = new FormData();
+    formData.append('image', new File([resizedBlob], 'image.jpg', { type: 'image/jpeg' }));
+
+    const response = await fetch('/api/remove-background', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) throw new Error('Background removal failed');
+
+    const bgRemovedBlob = await response.blob();
+
+    // Crop transparent areas
+    const croppedBlob = await cropTransparentImage(bgRemovedBlob);
+
+    // Create final 512px PNG for storage (single image, transforms on-the-fly)
+    const processedPng = await resizeImage(new File([croppedBlob], 'image.png', { type: 'image/png' }), 512, 0.9, 'image/png');
+
+    const previewUrl = URL.createObjectURL(processedPng);
+
+    return {
+      processedPreview: previewUrl,
+      processedImage: processedPng
+    };
   };
 
   // Simple perceptual hash (dHash - Difference Hash)
@@ -405,6 +968,7 @@ export default function UploadPage() {
       setIsProcessing(true);
 
       try {
+        // Run analysis and background removal in parallel
         const analysisPromise = analyzeImage(imageFile);
         const bgRemovalPromise = removeBackgroundClientSide(imageFile);
         await Promise.all([analysisPromise, bgRemovalPromise]);
@@ -455,12 +1019,23 @@ export default function UploadPage() {
           // Check if AI subcategory matches our predefined list
           if (result.metadata.subcategory) {
             const aiSubcategory = result.metadata.subcategory.toLowerCase();
-            const matchingOption = subcategoryOptions[aiCategory].find(
-              option => option.toLowerCase() === aiSubcategory
-            );
+            const matches = subcategoryOptions[aiCategory]
+              .map(option => {
+                const optLower = option.toLowerCase();
+                if (optLower === aiSubcategory) return { option, score: 4 };
+                if (aiSubcategory.startsWith(optLower)) return { option, score: 3, len: optLower.length };
+                if (aiSubcategory.includes(optLower)) return { option, score: 2, len: optLower.length };
+                if (optLower.includes(aiSubcategory)) return { option, score: 1 };
+                return null;
+              })
+              .filter(Boolean)
+              .sort((a, b) => {
+                if (b!.score !== a!.score) return b!.score - a!.score;
+                return ((b as any).len || 0) - ((a as any).len || 0);
+              });
 
-            if (matchingOption) {
-              setSubcategory(matchingOption);
+            if (matches.length > 0) {
+              setSubcategory(matches[0]!.option);
               setCustomSubcategory("");
             } else {
               setSubcategory("Other");
@@ -470,12 +1045,23 @@ export default function UploadPage() {
         } else if (result.metadata.subcategory) {
           // If category doesn't match but we have subcategory, check against current category
           const aiSubcategory = result.metadata.subcategory.toLowerCase();
-          const matchingOption = subcategoryOptions[category].find(
-            option => option.toLowerCase() === aiSubcategory
-          );
+          const matches = subcategoryOptions[category]
+            .map(option => {
+              const optLower = option.toLowerCase();
+              if (optLower === aiSubcategory) return { option, score: 4 };
+              if (aiSubcategory.startsWith(optLower)) return { option, score: 3, len: optLower.length };
+              if (aiSubcategory.includes(optLower)) return { option, score: 2, len: optLower.length };
+              if (optLower.includes(aiSubcategory)) return { option, score: 1 };
+              return null;
+            })
+            .filter(Boolean)
+            .sort((a, b) => {
+              if (b!.score !== a!.score) return b!.score - a!.score;
+              return ((b as any).len || 0) - ((a as any).len || 0);
+            });
 
-          if (matchingOption) {
-            setSubcategory(matchingOption);
+          if (matches.length > 0) {
+            setSubcategory(matches[0]!.option);
             setCustomSubcategory("");
           } else {
             setSubcategory("Other");
@@ -483,7 +1069,11 @@ export default function UploadPage() {
           }
         }
         if (result.metadata.colors && result.metadata.colors.length > 0) {
-          setColors(result.metadata.colors.join(", "));
+          // Capitalize each color
+          const capitalizedColors = result.metadata.colors.map(
+            (c: string) => c.charAt(0).toUpperCase() + c.slice(1).toLowerCase()
+          );
+          setColors(capitalizedColors.join(", "));
         }
         if (result.metadata.brand) {
           setBrand(result.metadata.brand);
@@ -548,17 +1138,11 @@ export default function UploadPage() {
       // Clean up the intermediate blob to free memory
       imageBlob = null;
 
-      // Step 4: Resize cropped image to 512px for storage and AI analysis
-      console.log('Step 4: Creating 512px version for storage...');
-      const image512 = await resizeImage(croppedBlob, 512, 0.85, 'image/webp');
+      // Step 4: Resize cropped image to 512px PNG for storage (transforms on-the-fly)
+      console.log('Step 4: Creating 512px PNG for storage...');
+      const image512 = await resizeImage(croppedBlob, 512, 0.9, 'image/png');
       console.log('512px version created, size:', (image512.size / 1024).toFixed(2), 'KB');
-      setProcessedImage512(image512);
-
-      // Step 5: Create 200px thumbnail
-      console.log('Step 5: Creating 200px thumbnail...');
-      const thumbnail200 = await resizeImage(croppedBlob, 200, 0.8, 'image/webp');
-      console.log('200px thumbnail created, size:', (thumbnail200.size / 1024).toFixed(2), 'KB');
-      setThumbnailImage200(thumbnail200);
+      setProcessedImage(image512);
 
       // Force garbage collection hint (browser may ignore)
       if (typeof window !== 'undefined' && 'gc' in window) {
@@ -600,84 +1184,66 @@ export default function UploadPage() {
     if (!selectedFile || !category) return;
     setIsUploading(true);
     try {
-      // Compute perceptual hash for the image
-      const imageHash = await hashImageFile(selectedFile);
-      console.log('Perceptual hash for upload:', imageHash);
-
-      // Send processed 512px image and 200px thumbnail to server
-      // No original image - all processing done client-side
-      const formData = new FormData();
-      formData.append('category', category);
-      formData.append('userId', 'default-user');
-      formData.append('imageHash', imageHash);
-
-      // Send the processed images (already resized client-side)
-      if (processedImage512) {
-        formData.append('processedImage', processedImage512, 'processed.webp');
-      }
-      if (thumbnailImage200) {
-        formData.append('thumbnailImage', thumbnailImage200, 'thumbnail.webp');
+      // Get current queue item for itemId, imageUrl, imageHash
+      const currentItem = imageQueue[currentIndex];
+      if (!currentItem?.itemId || !currentItem?.imageUrl) {
+        throw new Error('Item not processed yet');
       }
 
-      // Use custom subcategory if "Other" is selected, otherwise use the selected value
+      // Use custom subcategory if "Other" is selected
       const finalSubcategory = subcategory === "Other" ? customSubcategory : subcategory;
-      if (finalSubcategory) formData.append('subcategory', finalSubcategory);
-
-      if (colors) formData.append('color', colors);
-      if (brand) formData.append('brand', brand);
 
       let fullSize = customSize || size;
       if (category === "bottoms" && size && sizeLength) {
         fullSize = `${size} (${sizeLength})`;
       }
-      if (fullSize) formData.append('size', fullSize);
 
-      if (description) formData.append('description', description);
-      if (notes) formData.append('notes', notes);
-      if (cost) formData.append('cost', cost);
-      if (datePurchased) {
-        const timestamp = new Date(datePurchased).getTime();
-        formData.append('date_purchased', timestamp.toString());
-      }
-      if (storePurchasedFrom) formData.append('store_purchased_from', storePurchasedFrom);
-
-      // Add AI metadata if available
-      if (aiMetadata) {
-        formData.append('aiMetadata', JSON.stringify(aiMetadata));
-      }
-
-      const response = await fetch('/api/upload-item', {
+      // Save metadata to database (image already in R2)
+      const response = await fetch('/api/save-item', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: currentItem.itemId,
+          imageUrl: currentItem.imageUrl,
+          imageHash: currentItem.imageHash,
+          userId: 'default-user',
+          category,
+          subcategory: finalSubcategory || null,
+          color: colors || null,
+          brand: brand || null,
+          size: fullSize || null,
+          description: description || null,
+          notes: notes || null,
+          cost: cost ? parseFloat(cost) : null,
+          datePurchased: datePurchased ? new Date(datePurchased).getTime() : null,
+          storePurchasedFrom: storePurchasedFrom || null,
+          aiMetadata: aiMetadata || null,
+          rotation: currentItem.rotation || 0,
+          originalFilename: currentItem.file.name || null,
+        }),
       });
 
       if (!response.ok) {
         const result = await response.json();
-
-        // Handle duplicate error specially
-        if (result.error === 'duplicate') {
-          const shouldContinue = confirm(result.message + '\n\nWould you like to go back and try a different item?');
-          if (shouldContinue) {
-            // Reset the form
-            setSelectedFile(null);
-            setPreview("");
-            setProcessedPreview("");
-            setShowConfirmation(false);
-            setAiMetadata(null);
-          }
-          return;
-        }
-
-        throw new Error(result.error || 'Failed to upload item');
+        throw new Error(result.error || 'Failed to save item');
       }
 
-      window.location.href = "/closet";
+      // Mark current item as done
+      setImageQueue(prev => prev.map((q, idx) =>
+        idx === currentIndex ? { ...q, status: 'done' } : q
+      ));
+
+      // If there are more items, move to next one
+      if (currentIndex < imageQueue.length - 1) {
+        moveToNextItem();
+      } else {
+        // All done - go to closet
+        window.location.href = "/closet";
+      }
     } catch (error) {
       console.error("Upload error:", error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      const errorDetails = error instanceof Error ? error.stack : '';
-      alert(`Upload failed: ${errorMessage}\n\nPlease check your internet connection and try again.\n\nError details logged to console.`);
-      console.error('Full error details:', errorDetails);
+      alert(`Save failed: ${errorMessage}`);
     } finally {
       setIsUploading(false);
     }
@@ -685,31 +1251,39 @@ export default function UploadPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <header className="bg-white border-b-2 border-black">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      {/* Minimal Header */}
+      <header className="border-b border-gray-200">
+        <div className="max-w-4xl mx-auto px-6 py-6">
           <div className="flex justify-between items-center">
-            <div>
-              <h1 style={{ color: 'var(--text-primary)' }} className="text-2xl font-bold">Add Item</h1>
-              <p style={{ color: 'var(--text-secondary)' }} className="text-sm mt-1">
-                Upload or take a photo of your clothing
-              </p>
-            </div>
+            <Logo size="sm" />
             <Link
               href="/closet"
-              style={{ color: 'var(--text-secondary)' }}
-              className="hover:opacity-70 transition-opacity"
+              className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 hover:text-black transition-colors"
             >
-              Back to Closet
+              <ArrowLeft size={14} />
+              Back
             </Link>
           </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white border-2 border-black rounded-lg p-6">
+      <main className="max-w-4xl mx-auto px-6 py-12">
+        {/* Page Title - only show when no file selected */}
+        {!selectedFile && (
+          <div className="text-center mb-12">
+            <h1 className="text-sm uppercase tracking-widest text-gray-500 mb-2">Add to Collection</h1>
+            <p className="text-xs text-gray-400">Upload or photograph your item</p>
+          </div>
+        )}
+
+        <div className="max-w-lg mx-auto">
           {!selectedFile && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="border-2 border-dashed border-black rounded-lg p-8 text-center">
+            <div className="space-y-4">
+              {/* Camera Button */}
+              <button
+                onClick={() => cameraInputRef.current?.click()}
+                className="w-full py-6 border border-black bg-black text-white hover:bg-gray-900 transition-colors"
+              >
                 <input
                   ref={cameraInputRef}
                   type="file"
@@ -718,74 +1292,130 @@ export default function UploadPage() {
                   onChange={handleCameraSelect}
                   className="hidden"
                 />
-                <div className="mb-4 flex justify-center">
-                  <Camera size={64} strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
+                <div className="flex items-center justify-center gap-3">
+                  <Camera size={20} strokeWidth={1.5} />
+                  <span className="text-xs uppercase tracking-widest">Take Photo</span>
                 </div>
-                <button
-                  onClick={() => cameraInputRef.current?.click()}
-                  style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
-                  className="px-6 py-3 text-white rounded-lg font-medium transition-all hover:shadow-lg"
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
-                >
-                  Take Photo
-                </button>
-                <p style={{ color: 'var(--text-secondary)' }} className="text-sm mt-3">
-                  Use your camera
-                </p>
-              </div>
+              </button>
 
-              <div className="border-2 border-dashed border-black rounded-lg p-8 text-center">
+              {/* Upload Button */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-6 border border-black bg-white text-black hover:bg-gray-50 transition-colors"
+              >
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
+                  multiple
                   onChange={handleFileSelect}
                   className="hidden"
                 />
-                <div className="mb-4 flex justify-center">
-                  <Upload size={64} strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
+                <div className="flex items-center justify-center gap-3">
+                  <Upload size={20} strokeWidth={1.5} />
+                  <span className="text-xs uppercase tracking-widest">Upload from Library</span>
                 </div>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
-                  className="px-6 py-3 text-white rounded-lg font-medium transition-all hover:shadow-lg"
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
-                >
-                  Upload from Device
-                </button>
-                <p style={{ color: 'var(--text-secondary)' }} className="text-sm mt-3">
-                  Choose from photo library
-                </p>
-              </div>
+              </button>
             </div>
           )}
 
           {selectedFile && !showConfirmation && (
             <div className="relative">
-              <img src={preview} alt="Selected" className="w-full rounded-lg border-2 border-black" />
+              <img src={preview} alt="Selected" className="w-full border border-gray-200" />
               {(isAnalyzing || isProcessing) && (
-                <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-black/70 flex items-center justify-center rounded-lg overflow-hidden">
-                  <div className="absolute inset-0">
-                    <div className="absolute w-full h-0.5 animate-scan-line" style={{
-                      background: `linear-gradient(90deg, transparent 0%, var(--accent-primary) 50%, transparent 100%)`,
-                      boxShadow: `0 0 20px var(--accent-primary), 0 0 40px var(--accent-primary)`
-                    }}></div>
+                <div className="absolute inset-0 bg-white flex items-center justify-center overflow-hidden">
+                  <style>{`
+                    @keyframes pulse3d {
+                      0%, 100% { transform: scale(0.85); opacity: 0.2; }
+                      50% { transform: scale(1.15); opacity: 0.6; }
+                    }
+                    @keyframes spin {
+                      0% { transform: rotate(0deg); }
+                      100% { transform: rotate(360deg); }
+                    }
+                    @keyframes spinReverse {
+                      0% { transform: rotate(360deg); }
+                      100% { transform: rotate(0deg); }
+                    }
+                  `}</style>
+
+                  {/* 15 concentric circles with varied speed spinning arches */}
+                  <div className="relative flex items-center justify-center">
+                    {[
+                      { size: 200, speed: 1.2, reverse: false },
+                      { size: 186, speed: 4, reverse: true },
+                      { size: 172, speed: 2.5, reverse: false },
+                      { size: 158, speed: 0.8, reverse: true },
+                      { size: 144, speed: 3, reverse: false },
+                      { size: 130, speed: 1.5, reverse: true },
+                      { size: 116, speed: 5, reverse: false },
+                      { size: 102, speed: 2, reverse: true },
+                      { size: 88, speed: 0.6, reverse: false },
+                      { size: 74, speed: 3.5, reverse: true },
+                      { size: 60, speed: 1.8, reverse: false },
+                      { size: 46, speed: 4.5, reverse: true },
+                      { size: 32, speed: 2.2, reverse: false },
+                      { size: 18, speed: 1, reverse: true },
+                      { size: 8, speed: 3, reverse: false },
+                    ].map((ring, i) => (
+                      <div key={i}>
+                        <div
+                          className="absolute rounded-full border border-gray-200"
+                          style={{
+                            width: `${ring.size}px`,
+                            height: `${ring.size}px`,
+                            left: `${-ring.size/2}px`,
+                            top: `${-ring.size/2}px`,
+                            animation: `pulse3d 3s ease-in-out infinite`,
+                            animationDelay: `${-i * 0.2}s`,
+                          }}
+                        />
+                        <div
+                          className="absolute rounded-full border-2 border-transparent border-t-black"
+                          style={{
+                            width: `${ring.size}px`,
+                            height: `${ring.size}px`,
+                            left: `${-ring.size/2}px`,
+                            top: `${-ring.size/2}px`,
+                            animation: `${ring.reverse ? 'spinReverse' : 'spin'} ${ring.speed}s linear infinite`,
+                          }}
+                        />
+                      </div>
+                    ))}
                   </div>
-                  <div className="text-center text-white z-10">
-                    <div className="animate-spin h-12 w-12 border-4 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
-                    <p className="text-lg font-semibold relative inline-block">
-                      <span className="relative">
-                        Analyzing with AI...
-                        <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-50 animate-shimmer"></span>
-                      </span>
-                    </p>
-                    <p className="text-sm opacity-80 mt-2">
-                      {isAnalyzing && isProcessing ? "Detecting details & removing background" :
-                       isAnalyzing ? "Detecting category, colors, and details" :
-                       "Removing background"}
-                    </p>
+
+                  {/* Status text with progress */}
+                  <div className="absolute bottom-6 text-center w-full px-4">
+                    {totalToProcess > 1 ? (
+                      <>
+                        <div className="text-black text-lg font-light mb-1">
+                          {processedCount}/{totalToProcess}
+                        </div>
+                        <div className="text-black/40 text-[10px] uppercase tracking-[0.4em] font-light">
+                          Completed
+                        </div>
+                        <div className="mt-3 w-40 h-1.5 bg-gray-200 rounded-full overflow-hidden mx-auto">
+                          <div
+                            className="h-full bg-black transition-all duration-300"
+                            style={{ width: `${(processedCount / totalToProcess) * 100}%` }}
+                          />
+                        </div>
+                        {/* Processing log */}
+                        {processingLog.length > 0 && (
+                          <div className="mt-4 max-h-24 overflow-y-auto">
+                            {processingLog.map((log, idx) => (
+                              <div key={idx} className="text-[9px] text-gray-400 font-mono">
+                                {log}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-black/40 text-[10px] uppercase tracking-[0.4em] font-light">
+                        Analyzing
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -793,31 +1423,139 @@ export default function UploadPage() {
           )}
 
           {selectedFile && showConfirmation && (
-            <div className="space-y-6">
-              <div className="flex justify-center">
-                <div className="bg-white rounded-lg p-4 max-w-md border-2 border-black">
-                  <img src={processedPreview || preview} alt="Item preview" className="w-full rounded-lg" />
-                  {processedPreview && (
-                    <p style={{ color: 'var(--text-secondary)' }} className="text-xs text-center mt-2">✓ Background removed</p>
-                  )}
-                </div>
+            <div className="space-y-8">
+              {/* Top Action Buttons */}
+              <div className="flex justify-between items-center">
+                <button
+                  onClick={() => {
+                    // Discard current item and move to next
+                    if (imageQueue.length > 1 && currentIndex < imageQueue.length - 1) {
+                      setImageQueue(prev => prev.filter((_, idx) => idx !== currentIndex));
+                      const nextItem = imageQueue[currentIndex + 1];
+                      if (nextItem) updateDisplayFromQueueItem(nextItem);
+                    } else if (imageQueue.length > 1 && currentIndex > 0) {
+                      // Last item but not first - go back
+                      setImageQueue(prev => prev.filter((_, idx) => idx !== currentIndex));
+                      setCurrentIndex(currentIndex - 1);
+                      const prevItem = imageQueue[currentIndex - 1];
+                      if (prevItem) updateDisplayFromQueueItem(prevItem);
+                    } else {
+                      // Only item - reset everything
+                      setImageQueue([]);
+                      setCurrentIndex(0);
+                      setSelectedFile(null);
+                      setPreview("");
+                      setProcessedPreview("");
+                      setShowConfirmation(false);
+                    }
+                  }}
+                  className="text-xs uppercase tracking-widest text-gray-400 hover:text-red-500 transition-colors"
+                >
+                  Discard
+                </button>
+                <button
+                  onClick={handleUpload}
+                  disabled={
+                    isUploading ||
+                    !category ||
+                    !subcategory ||
+                    (subcategory === "Other" && !customSubcategory) ||
+                    !colors
+                  }
+                  className={`text-xs uppercase tracking-widest transition-colors ${
+                    isUploading || !category || !subcategory || (subcategory === "Other" && !customSubcategory) || !colors
+                      ? 'text-gray-300 cursor-not-allowed'
+                      : 'text-black hover:text-gray-600'
+                  }`}
+                >
+                  {isUploading ? "Saving..." : "Save"}
+                </button>
               </div>
 
-              {aiMetadata && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="font-medium text-green-900 mb-2">✓ AI Detected</h4>
-                  <p className="text-sm text-green-700">
-                    {aiMetadata.description || "Successfully analyzed"}
+              {/* Duplicate Warning */}
+              {imageQueue[currentIndex]?.isDuplicate && (
+                <div className="bg-yellow-50 border border-yellow-200 px-4 py-3 mb-4">
+                  <p className="text-xs text-yellow-800">
+                    <span className="font-medium">Duplicate detected:</span> You already have{' '}
+                    {[
+                      imageQueue[currentIndex].duplicateInfo?.subcategory,
+                      imageQueue[currentIndex].duplicateInfo?.color,
+                      imageQueue[currentIndex].duplicateInfo?.brand
+                    ].filter(Boolean).join(', ') || 'this item'}{' '}
+                    in your closet.
                   </p>
                 </div>
               )}
 
-              <div className="space-y-4">
-                <h3 style={{ color: 'var(--text-primary)' }} className="text-lg font-semibold">Required Details</h3>
+              {/* Queue Progress Indicator */}
+              {imageQueue.length > 1 && (
+                <div className="text-center mb-4">
+                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">
+                    Item {currentIndex + 1} of {imageQueue.length}
+                  </p>
+                  <div className="flex justify-center gap-1">
+                    {imageQueue.map((item, idx) => (
+                      <div
+                        key={item.id}
+                        className={`w-2 h-2 rounded-full ${
+                          idx < currentIndex
+                            ? 'bg-green-500'
+                            : idx === currentIndex
+                            ? 'bg-black'
+                            : item.status === 'ready'
+                            ? 'bg-gray-400'
+                            : 'bg-gray-200'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
 
-                <div className="grid grid-cols-3 gap-4">
+              {/* Image Preview */}
+              <div className="flex flex-col items-center">
+                <div className="w-full max-w-sm overflow-hidden">
+                  <img
+                    src={processedPreview || preview}
+                    alt="Item preview"
+                    className="w-full border border-gray-200 transition-transform"
+                    style={{ transform: `rotate(${rotation}deg)` }}
+                  />
+                </div>
+                {/* Rotation Controls */}
+                <div className="flex justify-center gap-6 mt-4">
+                  <button
+                    onClick={rotateLeft}
+                    className="p-2 text-gray-400 hover:text-black transition-colors"
+                    title="Rotate left"
+                  >
+                    <RotateCcw size={20} strokeWidth={1.5} />
+                  </button>
+                  <button
+                    onClick={rotateRight}
+                    className="p-2 text-gray-400 hover:text-black transition-colors"
+                    title="Rotate right"
+                  >
+                    <RotateCw size={20} strokeWidth={1.5} />
+                  </button>
+                </div>
+              </div>
+
+              {aiMetadata?.description && (
+                <div className="border-t border-b border-gray-200 py-4">
+                  <p className="text-xs text-gray-400 text-center">
+                    <span className="font-medium">Description:</span> {aiMetadata.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Form Fields */}
+              <div className="space-y-6">
+                <h3 className="text-xs uppercase tracking-widest text-gray-500 text-center">Item Details</h3>
+
+                <div className="space-y-4">
                   <div>
-                    <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Category *</label>
+                    <label className="block text-xs uppercase tracking-wider text-gray-500 mb-2">Category</label>
                     <select
                       value={category}
                       onChange={(e) => {
@@ -826,8 +1564,7 @@ export default function UploadPage() {
                         setSizeLength("");
                         setCustomSize("");
                       }}
-                      style={{ color: 'var(--text-primary)' }}
-                      className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
+                      className="w-full px-4 py-3 border border-gray-300 bg-white text-sm focus:border-black focus:outline-none transition-colors"
                     >
                       {categories.map((cat) => (
                         <option key={cat} value={cat}>
@@ -838,15 +1575,14 @@ export default function UploadPage() {
                   </div>
 
                   <div>
-                    <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Type *</label>
+                    <label className="block text-xs uppercase tracking-wider text-gray-500 mb-2">Type</label>
                     <select
                       value={subcategory}
                       onChange={(e) => {
                         setSubcategory(e.target.value);
                         if (e.target.value !== "Other") setCustomSubcategory("");
                       }}
-                      style={{ color: 'var(--text-primary)' }}
-                      className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
+                      className="w-full px-4 py-3 border border-gray-300 bg-white text-sm focus:border-black focus:outline-none transition-colors"
                     >
                       <option value="">Select type...</option>
                       {subcategoryOptions[category].map((option) => (
@@ -860,27 +1596,48 @@ export default function UploadPage() {
 
                   {subcategory === "Other" && (
                     <div>
-                      <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Custom Type *</label>
+                      <label className="block text-xs uppercase tracking-wider text-gray-500 mb-2">Custom Type</label>
                       <input
                         type="text"
                         value={customSubcategory}
                         onChange={(e) => setCustomSubcategory(e.target.value)}
                         placeholder="Enter custom type"
-                        style={{ color: 'var(--text-primary)' }}
-                        className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
+                        className="w-full px-4 py-3 border border-gray-300 bg-white text-sm focus:border-black focus:outline-none transition-colors"
                       />
                     </div>
                   )}
 
                   <div>
-                    <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Colors *</label>
+                    <label className="block text-xs uppercase tracking-wider text-gray-500 mb-2">Colors</label>
+                    {/* Color Palette Display */}
+                    {colorPalette.length > 0 && (
+                      <div className="mb-3">
+                        <div className="flex gap-2 flex-wrap">
+                          {colorPalette.slice(0, 8).map((color, idx) => {
+                            // Use RGB if available, otherwise fallback to name lookup
+                            const bgColor = color.rgb
+                              ? `rgb(${color.rgb[0]}, ${color.rgb[1]}, ${color.rgb[2]})`
+                              : colorNameToHex(color.name);
+                            return (
+                              <div key={idx} className="flex flex-col items-center">
+                                <div
+                                  className="w-10 h-10 rounded border border-gray-300 shadow-sm"
+                                  style={{ backgroundColor: bgColor }}
+                                  title={`${color.name}: ${color.percent}%`}
+                                />
+                                <span className="text-[9px] text-gray-400 mt-1">{color.percent}%</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <input
                       type="text"
                       value={colors}
                       onChange={(e) => setColors(e.target.value)}
                       placeholder="e.g., black, white"
-                      style={{ color: 'var(--text-primary)' }}
-                      className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
+                      className="w-full px-4 py-3 border border-gray-300 bg-white text-sm focus:border-black focus:outline-none transition-colors"
                     />
                   </div>
                 </div>
@@ -888,217 +1645,86 @@ export default function UploadPage() {
                 {/* Collapsible Optional Fields */}
                 <button
                   onClick={() => setShowOptionalFields(!showOptionalFields)}
-                  style={{ color: 'var(--accent-primary)' }}
-                  className="text-sm font-medium hover:underline flex items-center gap-2"
+                  className="text-xs uppercase tracking-wider text-gray-400 hover:text-black transition-colors flex items-center gap-2 mx-auto"
                 >
-                  {showOptionalFields ? "▼" : "▶"} Add More Details (optional)
+                  {showOptionalFields ? "−" : "+"} More Details
                 </button>
 
                 {showOptionalFields && (
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-white rounded-lg border-2 border-black">
+                  <div className="space-y-4 pt-4 border-t border-gray-100">
                     <div>
-                      <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Brand</label>
+                      <label className="block text-xs uppercase tracking-wider text-gray-500 mb-2">Brand</label>
                       <input
                         type="text"
                         value={brand}
                         onChange={(e) => setBrand(e.target.value)}
                         placeholder="e.g., Nike, Zara"
-                        style={{ color: 'var(--text-primary)' }}
-                        className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
+                        className="w-full px-4 py-3 border border-gray-300 bg-white text-sm focus:border-black focus:outline-none transition-colors"
                       />
                     </div>
 
-                    {(category === "bottoms" || category === "shoes") && (
-                      <div>
-                        <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Size Type</label>
-                        <select
-                          value={sizeType}
-                          onChange={(e) => {
-                            setSizeType(e.target.value);
-                            setSize("");
-                            setSizeLength("");
-                          }}
-                          style={{ color: 'var(--text-primary)' }}
-                          className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
-                        >
-                          <option value="women">Women's</option>
-                          <option value="men">Men's</option>
-                        </select>
-                      </div>
-                    )}
-
-                    <div className={category === "bottoms" || category === "shoes" ? "" : "col-span-2"}>
-                      <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">
-                        Size {category === "bottoms" && "(Waist)"}
-                      </label>
-                      <select
+                    <div>
+                      <label className="block text-xs uppercase tracking-wider text-gray-500 mb-2">Size</label>
+                      <input
+                        type="text"
                         value={size}
-                        onChange={(e) => {
-                          setSize(e.target.value);
-                          if (e.target.value !== "Other") setCustomSize("");
-                        }}
-                        style={{ color: 'var(--text-primary)' }}
-                        className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
-                      >
-                        <option value="">Select size...</option>
-                        {getCurrentSizeOptions().map((s) => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-
-                    {category === "bottoms" && size && size !== "Other" && (
-                      <div>
-                        <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Length</label>
-                        <select
-                          value={sizeLength}
-                          onChange={(e) => setSizeLength(e.target.value)}
-                          style={{ color: 'var(--text-primary)' }}
-                          className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
-                        >
-                          <option value="">Select length...</option>
-                          {getSizeLengthOptions().map((l) => (
-                            <option key={l} value={l}>{l}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {size === "Other" && (
-                      <div className="col-span-2">
-                        <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Custom Size</label>
-                        <input
-                          type="text"
-                          value={customSize}
-                          onChange={(e) => setCustomSize(e.target.value)}
-                          placeholder="Enter custom size"
-                          style={{ color: 'var(--text-primary)' }}
-                          className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
-                        />
-                      </div>
-                    )}
-
-                    <div className="col-span-2">
-                      <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Description</label>
-                      <textarea
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Describe the item..."
-                        rows={2}
-                        style={{ color: 'var(--text-primary)' }}
-                        className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
+                        onChange={(e) => setSize(e.target.value)}
+                        placeholder="e.g., M, 32, 10"
+                        className="w-full px-4 py-3 border border-gray-300 bg-white text-sm focus:border-black focus:outline-none transition-colors"
                       />
                     </div>
 
                     <div>
-                      <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Cost</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={cost}
-                        onChange={(e) => setCost(e.target.value)}
-                        placeholder="0.00"
-                        style={{ color: 'var(--text-primary)' }}
-                        className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Date Purchased</label>
-                      <input
-                        type="date"
-                        value={datePurchased}
-                        onChange={(e) => setDatePurchased(e.target.value)}
-                        style={{ color: 'var(--text-primary)' }}
-                        className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
-                      />
-                    </div>
-
-                    <div className="col-span-2">
-                      <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Store</label>
+                      <label className="block text-xs uppercase tracking-wider text-gray-500 mb-2">Store</label>
                       <input
                         type="text"
                         value={storePurchasedFrom}
                         onChange={(e) => setStorePurchasedFrom(e.target.value)}
                         placeholder="e.g., Amazon, Nordstrom"
-                        style={{ color: 'var(--text-primary)' }}
-                        className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
+                        className="w-full px-4 py-3 border border-gray-300 bg-white text-sm focus:border-black focus:outline-none transition-colors"
                       />
                     </div>
 
-                    <div className="col-span-2">
-                      <label style={{ color: 'var(--text-primary)' }} className="block text-sm font-medium mb-2">Notes</label>
+                    <div>
+                      <label className="block text-xs uppercase tracking-wider text-gray-500 mb-2">Notes</label>
                       <textarea
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
                         placeholder="Any additional notes..."
                         rows={2}
-                        style={{ color: 'var(--text-primary)' }}
-                        className="w-full px-4 py-2 border-2 border-black rounded-lg bg-white focus:ring-2 focus:outline-none"
+                        className="w-full px-4 py-3 border border-gray-300 bg-white text-sm focus:border-black focus:outline-none transition-colors"
                       />
                     </div>
                   </div>
                 )}
               </div>
 
-              <div className="flex gap-4">
-                <button
-                  onClick={handleUpload}
-                  disabled={
-                    isUploading ||
-                    !category ||
-                    !subcategory ||
-                    (subcategory === "Other" && !customSubcategory) ||
-                    !colors
-                  }
-                  style={{
-                    backgroundColor: (isUploading || !category || !subcategory || (subcategory === "Other" && !customSubcategory) || !colors) ? '#9CA3AF' : 'var(--accent-primary)',
-                    boxShadow: (isUploading || !category || !subcategory || (subcategory === "Other" && !customSubcategory) || !colors) ? 'none' : '0 4px 12px rgba(212, 175, 55, 0.3)'
-                  }}
-                  className="flex-1 px-4 py-2 disabled:opacity-100 text-white rounded-lg font-medium transition-all hover:shadow-lg"
-                  onMouseEnter={(e) => {
-                    if (!isUploading && category && subcategory && !(subcategory === "Other" && !customSubcategory) && colors) {
-                      e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isUploading && category && subcategory && !(subcategory === "Other" && !customSubcategory) && colors) {
-                      e.currentTarget.style.backgroundColor = 'var(--accent-primary)';
-                    }
-                  }}
-                >
-                  {isUploading ? "Uploading..." : "Save to Closet"}
-                </button>
+              <div className="pt-6">
                 <button
                   onClick={() => {
-                    setSelectedFile(null);
-                    setPreview("");
-                    setProcessedPreview("");
-                    setShowConfirmation(false);
-                    setAiMetadata(null);
+                    const itemCount = imageQueue.length || 1;
+                    const message = itemCount > 1
+                      ? `Cancel upload of all ${itemCount} items?`
+                      : 'Cancel this upload?';
+                    if (confirm(message)) {
+                      setImageQueue([]);
+                      setCurrentIndex(0);
+                      setSelectedFile(null);
+                      setPreview("");
+                      setProcessedPreview("");
+                      setShowConfirmation(false);
+                      setAiMetadata(null);
+                    }
                   }}
-                  className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+                  className="w-full py-4 text-xs uppercase tracking-widest text-gray-400 hover:text-red-500 transition-colors"
                 >
-                  Cancel
+                  Cancel All
                 </button>
               </div>
             </div>
           )}
         </div>
       </main>
-
-      <style jsx>{`
-        @keyframes scan-line {
-          0% { top: 0; opacity: 0; }
-          10% { opacity: 1; }
-          90% { opacity: 1; }
-          100% { top: 100%; opacity: 0; }
-        }
-        .animate-scan-line {
-          animation: scan-line 2s ease-in-out infinite;
-        }
-      `}</style>
     </div>
   );
 }

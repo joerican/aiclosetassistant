@@ -7,15 +7,19 @@ export async function GET(
   try {
     const { env } = await getCloudflareContext();
     const R2 = env.CLOSET_IMAGES;
+    const IMAGES = env.IMAGES;
 
     if (!R2) {
       return new Response('R2 binding not available', { status: 500 });
     }
 
+    // Parse URL for transform params
+    const url = new URL(request.url);
+    const width = url.searchParams.get('w');
+    const rotate = url.searchParams.get('rotate');
+
     // Await params in Next.js 16
     const resolvedParams = await params;
-
-    // Join the path segments (e.g., ['original', 'abc123.jpg'] -> 'original/abc123.jpg')
     const key = resolvedParams.path.join('/');
 
     // Get the object from R2
@@ -25,10 +29,51 @@ export async function GET(
       return new Response('Image not found', { status: 404 });
     }
 
-    // Return the image with proper headers
-    return new Response(object.body, {
+    // Get image data as ArrayBuffer (needed for transforms, also allows fallback)
+    const imageData = await object.arrayBuffer();
+
+    // If transform params specified and IMAGES binding available, transform on-the-fly
+    const widthNum = width ? parseInt(width) : 0;
+    const rotateNum = rotate ? parseInt(rotate) : 0;
+
+    if (IMAGES && (widthNum > 0 || rotateNum)) {
+      try {
+        // Build transform options
+        const transformOpts: any = {};
+        if (widthNum > 0 && widthNum <= 1000) {
+          transformOpts.width = widthNum;
+          transformOpts.fit = 'scale-down';
+        }
+        if (rotateNum && [90, 180, 270].includes(rotateNum)) {
+          transformOpts.rotate = rotateNum;
+        }
+
+        if (Object.keys(transformOpts).length > 0) {
+          const transformed = await IMAGES
+            .input(imageData)
+            .transform(transformOpts)
+            .output({ format: 'image/webp', quality: 80 });
+
+          const response = await transformed.response();
+          const blob = await response.blob();
+
+          return new Response(blob, {
+            headers: {
+              'Content-Type': 'image/webp',
+              'Cache-Control': 'public, max-age=3600',  // 1 hour cache for transformed images
+            },
+          });
+        }
+      } catch (transformError) {
+        console.error('Transform error:', transformError);
+        // Fall through to return original
+      }
+    }
+
+    // Return original image
+    return new Response(imageData, {
       headers: {
-        'Content-Type': object.httpMetadata?.contentType || 'image/jpeg',
+        'Content-Type': object.httpMetadata?.contentType || 'image/png',
         'Cache-Control': 'public, max-age=31536000, immutable',
       },
     });
