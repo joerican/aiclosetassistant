@@ -1,9 +1,9 @@
 # AI Closet Assistant - Project Documentation
 
-**Last Updated**: 2025-11-19 09:04 EST (✅ Fixed OOM + Optimized Images)
-**Status**: ✅ LIVE AND WORKING - Zero Warnings, Latest Everything
+**Last Updated**: 2025-11-24 16:55 EST (✅ Queue-Based Processing + User Confirmation + Cleanup)
+**Status**: ✅ LIVE AND WORKING - Queue-Based Image Pipeline with User Confirmation Flow
 **⚠️ LEGAL TODO**: Must add user license agreement before public launch (see docs/legal/llama-license-requirements.md)
-**Production URL**: https://aiclosetassistant.com
+**Production URL**: https://theclosetai.com
 **Worker URL**: https://aiclosetassistant.aiclosetassistant-com-account.workers.dev
 **Project Path**: `/Users/jorge/Code Projects/aiclosetassistant`
 
@@ -14,6 +14,51 @@
 > **Terminology**: cf = Cloudflare (Pages, Workers, D1, R2, etc.)
 
 ## 🚨 Recent Breaking Changes
+
+**Queue-Based Processing + User Confirmation Workflow + Orphan Cleanup (2025-11-24 16:55 EST)**:
+- ✅ **Async Queue-Based Image Processing**: Switched from sync to async processing
+  - Client uploads to `/api/upload-pending` → immediate response with `itemId`
+  - Image stored in R2 `pending/{userId}/{itemId}.{ext}`
+  - Message sent to Cloudflare Queue `image-processing`
+  - Image processor worker handles BG removal, AI analysis, storage
+  - Client polls `/api/item-status/{itemId}` until status = 'processed'
+  - Benefits: No blocking, better UX, handles concurrent uploads, retries on failure
+- ✅ **User Confirmation Workflow**: Items require explicit confirmation
+  - Worker sets `status = 'processed'` after AI analysis (NOT 'completed')
+  - Items with `status = 'processed'` wait for user confirmation
+  - Only appear in closet after user clicks "Add to Closet"
+  - `/api/save-item` changes status from 'processed' → 'completed'
+  - `/api/get-items` filters by `status = 'completed'`
+  - Prevents orphaned items from appearing if user navigates away
+- ✅ **Automatic Orphan Cleanup**: Hourly cron job cleans up abandoned items
+  - Runs every hour via `crons = ["0 * * * *"]` in wrangler.toml
+  - Deletes pending files in R2 older than 4 hours (if not processed/completed)
+  - Deletes 'processed' items older than 4 hours (never confirmed by user)
+  - Cleans up both R2 files and database records
+  - Prevents storage bloat from incomplete uploads
+- ✅ **User-Scoped R2 Storage**: Organized by user ID
+  - Pending files: `pending/{userId}/{itemId}.{ext}`
+  - Final images: `items/{userId}/{itemId}.webp`
+  - Benefits: Easier user data management, clearer organization, simpler cleanup
+- ✅ **Enhanced Color Detection**: AI now required to return colors
+  - Updated AI prompt: "colors field is REQUIRED and must contain at least one color"
+  - Fallback: Sets `color = 'unknown'` if AI returns empty array
+  - Fixes issue where items had no color metadata
+- ✅ **Worker Deployment Fix**: Must use explicit config flag
+  - **CRITICAL**: Deploy image-processor with `-c wrangler.toml` flag
+  - Without flag, deploys to wrong worker (main app instead of image-processor)
+  - Command: `cd workers/image-processor && npx wrangler deploy -c wrangler.toml`
+  - Verification: Check logs show "Uploaded image-processor" (not "aiclosetassistant")
+- **Status Flow**: `pending` → `processing` → `processed` → `completed` (or `failed`)
+- **Files Updated**:
+  - `/workers/image-processor/src/index.ts` - Added cleanup cron, changed status to 'processed', enhanced AI prompt
+  - `/workers/image-processor/wrangler.toml` - Added hourly cron trigger
+  - `/migrations/add-processed-status.sql` - Added 'processed' status to CHECK constraint
+  - `/app/api/upload-pending/route.ts` - New endpoint for queue-based uploads
+  - `/app/api/item-status/[id]/route.ts` - New endpoint for polling status
+  - `/app/api/save-item/route.ts` - Sets status to 'completed' on confirmation
+  - `/app/upload/UploadClient.tsx` - Changed polling to check for 'processed' status
+  - Database cleared for fresh start with new structure
 
 **Fixed Out-of-Memory Issues + Optimized Image Sizes (2025-11-19 09:04 EST)**:
 - ✅ **Reverted to Server-Side Background Removal**: Fixed OOM errors on mobile
@@ -112,100 +157,16 @@
   - Added AI metadata display card with detected info
 - **Documentation**: See `docs/api-references/cloudflare-workers-ai.md`
 
-**Image Optimization Added (2025-11-19 04:09 EST)**:
-- ✅ **Added**: Automatic image resizing and WebP compression on upload
-- **Optimization Details**:
-  - Original images: Max 1200px width, WebP, 85% quality
-  - Processed images: Max 800px width, WebP, 90% quality
-  - Thumbnails: 300px width, WebP, 80% quality
-- **File Size Savings**: ~80-95% reduction (5MB photos → ~200-400KB)
-- **Benefits**: Faster page loads, lower bandwidth, better mobile experience
-- **Implementation**: Uses Cloudflare Images API `.transform()` + `.output()`
-
-**Background Removal Fixed with Images API (2025-11-19 03:56 EST)**:
-- ✅ **FIXED**: Background removal now works using Cloudflare Images API
-- **Issue**: `@cf/cloudflare/rembg` model doesn't exist in Workers AI
-- **Solution**: Use Cloudflare Images API with `segment: 'foreground'` parameter
-- **Model**: BiRefNet (Bilateral Reference Network) for image segmentation
-- **Changes Made**:
-  - Updated `app/api/remove-background/route.ts` to use IMAGES binding
-  - Added Images binding to `wrangler.jsonc`
-  - Added IMAGES type to `cloudflare-env.d.ts`
-- **Requirements**: Paid Cloudflare plan with Images Transformations enabled
-- **Documentation**: See `docs/api-references/cloudflare-background-removal.md`
-
-**Deploy Script Fixed (2025-11-19 03:48 EST)**:
-- ✅ **Fixed**: `npm run deploy` now properly sets `NEXT_PUBLIC_BUILD_TIME`
-- **Issue**: OpenNext was building without the build time environment variable
-- **Solution**: Added `NEXT_PUBLIC_BUILD_TIME` to both `deploy` and `preview` scripts in package.json
-- **Result**: Version badge now updates correctly on every deployment
-- **Command**: `npm run deploy` (no longer need separate `npm run build`)
-
-**Build Process Documented (2025-11-19 03:43 EST)**:
-- ✅ **Version Badge**: Build timestamp now displays in bottom-right corner
-- **How to Deploy**: Must run `npm run build` before deploy to update version
-- **Format**: `buildYYYYMMDD-hhmmss` (e.g., `build20251119-044500`)
-- **Purpose**: Verify deployments are live with visible build number
-- **Documented in**: Deployment section with clear instructions
-
-**Claude Code Configuration Added (2025-11-19 03:38 EST)**:
-- ✅ **Added `.claude/rules.md`** - Automatic session initialization rules
-- ✅ **Added `.claude/commands/docs.md`** - `/docs` slash command to read documentation
-- **Working Directory**: Set to `/Users/jorge/Code Projects/aiclosetassistant`
-- **Auto-reads**: PROJECT_DOCUMENTATION.md at start of every session
-- **Benefits**: Session continuity, automatic context loading, consistent working directory
-
-**Custom Domain Added (2025-11-19 03:35 EST)**:
-- ✅ **Custom Domain**: https://aiclosetassistant.com now points to the Worker
-- **Worker URL**: https://aiclosetassistant.aiclosetassistant-com-account.workers.dev (still accessible)
-- **Configured in**: Cloudflare Dashboard → Workers & Pages → aiclosetassistant → Settings → Domains
-
-**Background Removal Fixed (2025-11-19 03:30 EST)**:
-- ✅ **Fixed**: Background removal now actually works using Cloudflare AI
-- **Issue**: Code was using incorrect Image Transformations API instead of Cloudflare AI Workers
-- **Solution**: Updated `/api/remove-background/route.ts` to use `AI.run('@cf/cloudflare/rembg')` directly
-- **What Changed**:
-  - Removed incorrect R2 upload/fetch logic from background removal endpoint
-  - Now properly calls Cloudflare AI binding with `@cf/cloudflare/rembg` model
-  - Returns actual PNG with transparent background instead of original image
-- **Status**: ✅ Deployed and working
-
-**Pages Removed - Workers-Only Deployment (2025-11-19 02:20 EST)**:
-- ✅ **Cloudflare Pages project deleted** - no longer needed
-- **Deployment**: Workers-only via `npx opennextjs-cloudflare deploy`
-- **Production URL**: https://aiclosetassistant.aiclosetassistant-com-account.workers.dev
-- **Why**: OpenNext creates `.open-next/worker.js` for Workers runtime, not static assets for Pages
-- **Benefits**: No wasted build minutes, cleaner deployment, single source of truth
-
-**Workers Deployment Discovery (2025-11-19 02:15 EST)**:
-- ⚠️ **CRITICAL**: OpenNext deploys to Cloudflare **Workers**, NOT Pages
-- Discovered Pages integration was incompatible with OpenNext
-- Manual deployment via `npx opennextjs-cloudflare deploy` required
-
-**Build Optimizations (2025-11-19 01:43 EST)**:
-- ✅ Enabled build caching on Cloudflare Pages for faster rebuilds
-- ✅ Added `.cfignore` to prevent documentation changes from triggering deployments
-- **Result**: Faster builds (30-60s with cache vs 90-120s) and fewer unnecessary deployments
-
-**Final Transitive Dependency Fix (2025-11-19 01:11 EST)**:
-- Added npm overrides for `formdata-node@^6.0.3` to eliminate last deprecation warning
-- **Result**: ZERO deprecation warnings in build
-- Used npm overrides feature to force latest version of nested dependency
-
-**Dependency Upgrades (2025-11-19 01:05 EST)**:
-- **Next.js**: 15.5.2 → 16.0.3
-- **React**: 18.3.1 → 19.2.0
-- **ESLint**: 8.57.1 → 9.39.1
-- **Tailwind CSS**: 3.4.18 → 4.1.17
-- **Cloudflare SDK**: Updated to 5.2.0
-- All TypeScript types updated to latest
-- Tailwind config migrated to v4 format (removed tailwind.config.ts, updated CSS imports)
-
-**OpenNext Migration (2025-11-19 00:48 EST)**:
-- Migrated from deprecated `@cloudflare/next-on-pages` to `@opennextjs/cloudflare`
-- Now using **Node.js runtime** instead of Edge runtime
-- Build output changed from `.vercel/output/static` to `.open-next`
-- All deprecation warnings resolved
+**Previous Major Changes** (Consolidated for reference):
+- ✅ **Image Optimization**: 800px WebP for originals, 600px for processed, 200px thumbnails
+- ✅ **Background Removal**: Uses Cloudflare Images API with BiRefNet model (`segment: 'foreground'`)
+- ✅ **Server-Side Processing**: All image processing on server to avoid mobile OOM errors
+- ✅ **Custom Domain**: https://theclosetai.com (was aiclosetassistant.com)
+- ✅ **Version Badge**: Build timestamp displays in bottom-right corner
+- ✅ **Claude Code Config**: Auto-loads documentation, `.claude/commands/docs.md` slash command
+- ✅ **OpenNext Migration**: Switched from deprecated `@cloudflare/next-on-pages` to `@opennextjs/cloudflare`
+- ✅ **Latest Dependencies**: Next.js 16, React 19, Tailwind CSS 4, ESLint 9 (zero warnings)
+- ✅ **Workers Deployment**: Deploys via `npx opennextjs-cloudflare deploy`, Node.js runtime
 
 ## 📐 Development Philosophy
 
@@ -426,7 +387,7 @@ CREATE TABLE wear_history (
 
 ### Current Deployment Strategy: Manual Workers Deployment
 
-**Production URL**: https://aiclosetassistant.com
+**Production URL**: https://theclosetai.com
 **Worker URL**: https://aiclosetassistant.aiclosetassistant-com-account.workers.dev
 
 OpenNext deploys to **Cloudflare Workers** only. Cloudflare Pages project has been removed.

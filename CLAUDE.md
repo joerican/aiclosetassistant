@@ -2,6 +2,184 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Mobile-First Design Guidelines (Apple HIG)
+
+This app is built mobile-first following [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines).
+
+### Core Design Principles
+
+**Clarity**: Design layouts that fit device screens; users shouldn't need horizontal scrolling. Use consistent alignment of text, images, and buttons to show information relationships. Position controls near the content they affect for intuitive navigation.
+
+**Readability**: Ensure sufficient color differentiation between text and background. Prevent text overlap by adjusting line height or letter spacing appropriately.
+
+**High Fidelity**: Provide @2x and @3x image assets to prevent blurriness on Retina displays. Display images at their intended proportions to avoid visual distortion.
+
+### Touch Targets & Interactive Elements
+
+- **Minimum size**: 44×44pt (44×44px in web implementation) - Apple's fundamental requirement
+- **Recommended**: 48×48px for better accessibility and comfort
+- **Spacing**: 8-10px minimum between interactive elements to prevent mis-taps
+- **Research**: Targets smaller than 44×44pt result in 25% more mis-taps
+- **Controls**: Implement UI elements specifically designed for touch gestures to ensure natural interaction
+
+### Tailwind Implementation
+```tsx
+// ✅ Good - meets 44×44px minimum
+<button className="p-2">              // 8px padding + content
+  <Icon className="w-6 h-6" />        // 24px icon = 40×40px total (close to minimum)
+</button>
+
+// ✅ Better - exceeds minimum comfortably
+<button className="p-3">              // 12px padding + content
+  <Icon className="w-6 h-6" />        // 24px icon = 48×48px total
+</button>
+
+// ❌ Too small - below minimum
+<button className="p-1">              // 4px padding + content
+  <Icon className="w-4 h-4" />        // 16px icon = 24×24px total
+</button>
+```
+
+### Responsive Sizing Pattern
+```tsx
+// Mobile-first with larger desktop targets
+<button className="p-1.5 sm:p-2">    // 36px mobile, 40px+ desktop
+  <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
+</button>
+```
+
+### Typography Hierarchy
+
+**System Font**: San Francisco for Latin, Greek and Cyrillic alphabets (iOS default)
+
+**Font Sizes**:
+- **Large Titles**: 34pt (morphs to 17pt when scrolling)
+- **Body Text**: 17pt minimum recommended by Apple
+- **Notes/Small UI**: 13pt (smallest commonly seen in iOS)
+- **Absolute Minimum**: 11pt for legibility (avoid going smaller)
+
+**Font Weights**:
+- ✅ Use: Regular, Medium, Semibold, Bold
+- ❌ Avoid: Ultralight, Thin, Light (poor legibility)
+- **Hierarchy**: Apply Semibold or Bold for headings, use weight and size to establish importance
+
+**Best Practices**:
+- Support Dynamic Type for accessibility
+- Use system fonts when possible for consistency
+- Create clear hierarchy through weight, size, and color
+- Maintain minimum 11pt for iOS/iPadOS applications
+
+### Color & Contrast
+
+**Contrast Ratios** (WCAG Standards):
+- **Text**: 4.5:1 minimum for most text elements
+- **Preferred**: 7:1 for better accessibility (stringent standards)
+- **Non-Text Elements**: 3:1 minimum (buttons, controls, icons)
+- **Interactive States**: Ensure visible contrast between checked/unchecked, enabled/disabled states
+
+**System Colors**:
+- Prefer `UIColor` or `NSColor` system colors for text
+- System colors automatically respond to accessibility settings (Invert Colors, Increase Contrast)
+- Test contrast in both Light and Dark modes
+- Common mistake: Forgetting to verify dark mode contrast ratios
+
+**Testing**:
+- Use Xcode's Accessibility Inspector
+- Check contrast ratios with color contrast checkers
+- Verify all states: default, highlighted, selected, disabled
+- Test with Increase Contrast accessibility feature enabled
+
+### Layout & Safe Areas
+
+**Safe Areas**:
+- **Top**: 44-47pt (varies by device: notch, Dynamic Island, or none)
+- **Bottom**: 34pt (for devices with gesture indicators)
+- **Purpose**: Avoid device interactive and display features for smooth visual experience
+- **iOS 11+**: Use `safeAreaLayoutGuide` property
+
+**Margins & Spacing**:
+- **Default margin**: 16px from screen edge (AutoLayout standard)
+- **Grid gaps**: `gap-2` (8px) on mobile, `gap-4` (16px) on desktop
+- **Padding**: Reduce by 25-50% on mobile to maximize screen space
+- **Text**: 10-12px minimum on mobile, 12-14px on desktop
+- **System margins**: Each device includes layout guides for standard margins and readability
+
+**Device Considerations**:
+- iPhone X and newer: Account for notch/Dynamic Island sensors and rounded corners
+- Ensure app UI doesn't get clipped by device features
+- Use layout guides for consistent margins across device sizes
+
+### Buttons & Interactive States
+
+**Button Styles**:
+- **Primary actions**: Blue (e.g., "Save")
+- **Destructive actions**: Red (e.g., "Delete")
+- **Visual hierarchy**: Maintain clear contrast between primary, secondary, and disabled states
+- **Modern styles**: Use `.borderedProminent` and other SwiftUI button styles for traditional appearances
+
+**Button States** (must be visually distinct):
+1. **Default** - Normal resting state
+2. **Highlighted** - Active touch/press state
+3. **Selected** - Currently chosen option
+4. **Disabled** - Non-interactive state
+
+**Customization**:
+- Buttons can include title, icon, or both
+- Support custom backgrounds and styling
+- Icons can be prepended or centered if no text label
+- Support drop shadows, text styles, and custom colors
+
+### Gestures & Touch Interactions
+
+**Standard Gestures** (users expect these to work consistently):
+- **Tap**: Activates a control or selects an item
+- **Drag**: Moves an element from side-to-side or across the screen
+- **Swipe**: Scrolls content or triggers actions
+- **Flick**: Scrolls or pans quickly
+- **Pinch**: Zooms in/out
+- **Long Press**: Reveals contextual options
+
+**Design Principles**:
+- Offer shortcut gestures to supplement, not replace, interface-based navigation
+- Always provide a simple, visible way to navigate or perform actions (even if extra taps)
+- Don't rely solely on gestures - some users may not discover them
+- Support multi-touch interactions when appropriate
+
+**Categories**:
+1. **Basic touchscreen**: Taps, double taps, pinches, tap-and-hold, swipes, drag-and-drop
+2. **System gestures**: Control Center, Notification Panel, multitasking
+3. **Text editing**: Three-finger swipes/pinches for undo, redo, copy, paste, cut
+
+### Accessibility Requirements
+
+- **Touch targets**: Minimum 44×44pt for all interactive elements
+- **Contrast**: Meet 4.5:1 for text, 3:1 for non-text elements
+- **Dynamic Type**: Support system text size preferences
+- **Color independence**: Don't rely solely on color to convey information
+- **System features**: Support Increase Contrast, Reduce Motion, VoiceOver
+- **Testing**: Verify with Xcode Accessibility Inspector
+- **App Store**: Sufficient Contrast is required for approval
+
+### References
+
+**Official Apple Documentation**:
+- [Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines)
+- [Apple Design Tips](https://developer.apple.com/design/tips/)
+- [Typography Guidelines](https://developer.apple.com/design/human-interface-guidelines/typography)
+- [Color Guidelines](https://developer.apple.com/design/human-interface-guidelines/color)
+- [Layout Guidelines](https://developer.apple.com/design/human-interface-guidelines/layout)
+- [Buttons Guidelines](https://developer.apple.com/design/human-interface-guidelines/buttons)
+- [Accessibility & Color Contrast](https://developer.apple.com/design/human-interface-guidelines/accessibility/overview/color-and-contrast/)
+- [Gestures Documentation](https://developer.apple.com/documentation/swiftui/gestures)
+
+**Community Resources**:
+- [iOS Design Guidelines (LearnUI)](https://www.learnui.design/blog/ios-design-guidelines-templates.html)
+- [iOS Font Size Guidelines](https://www.learnui.design/blog/ios-font-size-guidelines.html)
+- [Touch Target Accessibility](https://medium.com/@zacdicko/size-matters-accessibility-and-touch-targets-56e942adc0cc)
+- [iOS Typography Best Practices](https://median.co/blog/apples-ui-dos-and-donts-typography)
+- [Content Formatting Guidelines](https://median.co/blog/apples-ui-dos-and-donts-formatting-content)
+- [iOS HIG Overview](https://ivomynttinen.com/blog/ios-design-guidelines/)
+
 ## Essential Commands
 
 ### Development
@@ -38,6 +216,36 @@ npm run deploy
 **Verification:**
 - Check version badge (bottom-right corner): `buildYYYYMMDD-hhmmss`
 - Bundle size changes when dependencies change (e.g., 9587KB → 8810KB)
+- **ALWAYS verify the build timestamp updated after deployment** - if it shows old time, deployment failed or browser cached
+
+**If build timestamp is old after deploy:**
+1. Check for authentication errors in deploy output
+2. Run `wrangler login` to refresh token if needed
+3. Hard refresh browser (Cmd+Shift+R) or try incognito
+4. Re-run clean build: `rm -rf .next .open-next && npm run deploy`
+
+### Two-Part Deployments (Main App + Image Processor)
+
+**CRITICAL: When changing both the main app AND the image-processor worker, BOTH must be deployed separately:**
+
+```bash
+# 1. Deploy image-processor worker (queue consumer)
+cd "/Users/jorge/Code Projects/aiclosetassistant"
+npx wrangler deploy workers/image-processor/src/index.ts --name image-processor --config workers/image-processor/wrangler.toml
+
+# 2. Deploy main app (clean build required for code changes)
+cd "/Users/jorge/Code Projects/aiclosetassistant"
+rm -rf .next .open-next && npm run deploy
+```
+
+**IMPORTANT:** The worker deployment MUST use explicit paths from the project root. Running `wrangler deploy` from the `workers/image-processor/` directory will incorrectly deploy the main app instead.
+
+**Common mistake:** Only deploying the image-processor worker but not the main app (or vice versa). Changes to API routes require main app deploy. Changes to queue processing require worker deploy.
+
+**When to deploy what:**
+- API route changes (`app/api/*`) → Deploy main app
+- Queue processor changes (`workers/image-processor/*`) → Deploy image-processor worker
+- Both changed → Deploy BOTH (worker first, then main app)
 
 ### Database Operations
 ```bash
@@ -56,6 +264,7 @@ npx wrangler d1 execute closet-db --command="SELECT * FROM clothing_items LIMIT 
 - `add-size-field.sql` - Added size tracking for clothing items
 - `add-description-notes.sql` - Added description and notes fields
 - `add-purchase-details.sql` - Added purchase date and price tracking
+- `add-status-column.sql` - Added status tracking for queue-based processing
 
 **Migration Pattern**: Create .sql file → Test locally → Apply to production → Commit to git
 
@@ -74,8 +283,78 @@ cd "/Users/jorge/Code Projects/aiclosetassistant" && wrangler tail --format=pret
 - **Storage**: Cloudflare R2 (Object Storage)
 - **AI**: Cloudflare Workers AI (Llama 3.2 11B Vision, BiRefNet background removal)
 - **Image Processing**: Cloudflare Images API
+- **Queues**: Cloudflare Queues for async image processing
 
-### Image Processing Pipeline
+### Workers Paid Plan Features
+
+This project uses the **Workers Paid plan** ($5/month), which provides:
+
+**Performance & Runtime:**
+- 15 minutes CPU time per request (vs 10ms free tier)
+- High performance runtime with no cold starts
+- Global deployments to hundreds of data centers
+- Maintenance-free infrastructure that scales automatically
+
+**Services Available:**
+- **Queues** - Async message processing for image pipeline
+- **Vectorize** - Vector database for embeddings (planned: outfit recommendations)
+- **Durable Objects** - Stateful serverless primitives
+- **D1** - SQLite database (expanded limits)
+- **KV** - Key-value storage (expanded limits)
+- **R2** - Object storage (expanded limits)
+- **Workers AI** - 300,000 Neurons/month included
+- **Browser Rendering** - Headless browser automation
+- **Containers** - Custom Docker containers
+
+**Development:**
+- Support for JavaScript and 9 additional languages
+- Full CLI deployment capabilities
+- Unlimited collaborators
+
+Reference: https://developers.cloudflare.com/workers/platform/pricing/
+
+### Image Processing Pipeline (Queue-Based)
+
+**Architecture**: Client → Upload API → Queue → Image Processor Worker
+
+1. **Client Upload** → Resize to 600px JPEG, compute hash, send to `/api/upload-pending`
+2. **Upload API** (`/api/upload-pending`):
+   - Store original in R2 `pending/{userId}/{itemId}.{ext}`
+   - Create DB record with `status: 'pending'`
+   - Send message to `image-processing` queue
+   - Return `itemId` immediately
+3. **Image Processor Worker** (queue consumer):
+   - BG removal at 800px (Cloudflare Images + BiRefNet)
+   - Trim transparent pixels (IMAGE_TRIM worker)
+   - AI analysis (Llama 3.2 11B Vision)
+   - Convert to WebP, store in R2 `items/{userId}/{itemId}.webp`
+   - Update DB with metadata and `status: 'processed'` (NOT 'completed')
+4. **Client Polling** → Poll `/api/item-status/[id]` until `status === 'processed'`
+5. **User Confirmation** → User reviews AI metadata, clicks "Add to Closet"
+6. **Save** → `/api/save-item` changes `status: 'processed'` → `status: 'completed'`
+7. **Cleanup** → Hourly cron deletes 'processed' items older than 4 hours (never confirmed)
+
+**Queue Configuration:**
+- Queue name: `image-processing`
+- Dead letter queue: `image-processing-dlq`
+- Max batch size: 1
+- Max retries: 3
+- Max concurrency: 10
+
+**Cleanup System:**
+The image-processor worker includes automatic cleanup:
+- **Hourly cron** (`0 * * * *`): Deletes orphaned files and unconfirmed items older than 4 hours
+  - Pending files in `pending/` with no valid DB record
+  - DB items with `status: 'processed'` (never confirmed by user)
+  - Orphaned files in `items/` and `thumbnails/` with no DB record
+- **Admin endpoints** (require `ADMIN_KEY` secret):
+  - `/cleanup?key=SECRET` - Run standard cleanup (4-hour threshold)
+  - `/cleanup-now?key=SECRET` - Force delete ALL non-completed items immediately
+  - `/list?key=SECRET` - List all files in R2 bucket
+  - `/health` - Public health check (no auth required)
+- **Set admin key**: `npx wrangler secret put ADMIN_KEY --name image-processor`
+
+### Image Processing Pipeline (Legacy Sync)
 
 **Server-side only** (no client-side processing to avoid OOM errors on mobile):
 
@@ -228,6 +507,18 @@ Route params are now Promises and MUST be awaited. Dynamic routes like `[id]` or
    - Purpose: R2 buckets are private by default; this proxies requests through the Worker
    - Note: Params must be awaited in Next.js 16+ (`const resolvedParams = await params`)
 
+8. **`POST /api/upload-pending`** - Queue image for async processing
+   - Input: FormData with `image`, `imageHash`, `userId`
+   - Process: Store in R2 `pending/`, create DB record, send to queue
+   - Output: JSON with `itemId` and `status: 'pending'`
+   - Returns immediately (no blocking)
+
+9. **`GET /api/item-status/[id]`** - Check processing status
+   - Input: Item ID in URL path
+   - Output: JSON with status and item data when completed
+   - Status values: `pending`, `processing`, `completed`, `failed`
+   - Client polls this until `completed` or `failed`
+
 ### Client/Server Component Split
 
 **Pattern**: Server component wrapper + Client component for interactivity
@@ -260,6 +551,8 @@ These sizes are optimized for mobile-first design (max 4"×4" display) and preve
 - `image_hash` - SHA-256 hash for duplicate detection (indexed)
 - `tags` - JSON array of AI-detected tags
 - `background_removed_url` - Processed image with transparent background
+- `status` - Processing status: `pending`, `processing`, `completed`, `failed` (indexed)
+- `error_message` - Error details when status is `failed`
 
 ### Duplicate Detection System
 
