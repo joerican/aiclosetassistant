@@ -1,7 +1,7 @@
 "use client";
 
 interface LogoProps {
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl" | "2xl" | "xl-custom";
   className?: string;
 }
 
@@ -19,6 +19,18 @@ export default function Logo({ size = "md", className = "" }: LogoProps) {
       closet: "text-4xl",
       ai: "text-4xl",
     },
+    xl: {
+      closet: "text-6xl",
+      ai: "text-6xl",
+    },
+    "2xl": {
+      closet: "text-8xl",
+      ai: "text-8xl",
+    },
+    "xl-custom": {
+      closet: "text-[66px]",
+      ai: "text-[66px]",
+    },
   };
 
   return (
@@ -27,17 +39,19 @@ export default function Logo({ size = "md", className = "" }: LogoProps) {
         style={{
           fontFamily: "'Bell MT', 'Times New Roman', serif",
           color: "var(--brand-blue)",
+          fontWeight: 150,
         }}
-        className={`${sizes[size].closet} font-normal tracking-wide`}
+        className={`${sizes[size].closet} tracking-wide`}
       >
         Closet
       </span>
       <span
         style={{
           fontFamily: "'Calibri', 'Arial', sans-serif",
-          color: "var(--text-primary)",
+          color: "var(--brand-blue)",
+          fontWeight: 150,
         }}
-        className={`${sizes[size].ai} font-bold`}
+        className={`${sizes[size].ai}`}
       >
         AI
       </span>

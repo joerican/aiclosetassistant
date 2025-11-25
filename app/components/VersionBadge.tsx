@@ -1,12 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function VersionBadge() {
   const [clicked, setClicked] = useState(false);
-
-  // This will be replaced at build time
-  const buildTime = process.env.NEXT_PUBLIC_BUILD_TIME || new Date().toISOString();
+  const [version, setVersion] = useState<string>("");
 
   // Format: buildYYYYMMDD-hhmmss
   const formatBuildVersion = (isoString: string) => {
@@ -21,7 +19,11 @@ export default function VersionBadge() {
     return `build${year}${month}${day}-${hours}${minutes}${seconds}`;
   };
 
-  const version = formatBuildVersion(buildTime);
+  // Only compute version on client side to avoid hydration mismatch
+  useEffect(() => {
+    const buildTime = process.env.NEXT_PUBLIC_BUILD_TIME || new Date().toISOString();
+    setVersion(formatBuildVersion(buildTime));
+  }, []);
 
   const handleClick = () => {
     const timestamp = new Date().toISOString();
@@ -41,6 +43,9 @@ export default function VersionBadge() {
 
     alert(`Issue logged at ${new Date().toLocaleTimeString()}\n\nCheck production logs for details.`);
   };
+
+  // Don't render until version is computed (avoids hydration mismatch)
+  if (!version) return null;
 
   return (
     <button

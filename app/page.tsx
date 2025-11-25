@@ -1,77 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { Camera, Sparkles, Shuffle } from "lucide-react";
-
+import { useUser } from "@clerk/nextjs";
+import Logo from "./components/Logo";
 
 export default function Home() {
+  const { isSignedIn } = useUser();
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-white">
-      <main className="flex flex-col gap-8 items-center max-w-2xl text-center">
-        <h1 className="text-5xl font-bold" style={{
-          background: 'linear-gradient(135deg, #D4AF37 0%, #C5A028 50%, #B8941F 100%)',
-          WebkitBackgroundClip: 'text',
-          backgroundClip: 'text',
-          color: 'transparent'
-        }}>
-          AI Closet Assistant
-        </h1>
-
-        <p className="text-xl" style={{ color: 'var(--text-secondary)' }}>
-          Your digital wardrobe organizer with AI-powered outfit suggestions
-        </p>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8 w-full">
-          <div className="p-6 rounded-lg bg-white border-2 border-black">
-            <div className="mb-4 flex justify-center">
-              <Camera size={48} strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
-            </div>
-            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Smart Upload</h3>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Take photos or upload images of your clothing items.
-            </p>
-          </div>
-
-          <div className="p-6 rounded-lg bg-white border-2 border-black">
-            <div className="mb-4 flex justify-center">
-              <Sparkles size={48} strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
-            </div>
-            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Auto Background Removal</h3>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              AI-powered background removal for clean displays
-            </p>
-          </div>
-
-          <div className="p-6 rounded-lg bg-white border-2 border-black">
-            <div className="mb-4 flex justify-center">
-              <Shuffle size={48} strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
-            </div>
-            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Outfit Shuffle</h3>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Casino-style slots to discover new outfit combos
-            </p>
-          </div>
+    <div className="min-h-screen relative" style={{ background: 'radial-gradient(ellipse at center, #ffffff 0%, #f5f5f5 50%, #d0d0d0 100%)' }}>
+      {/* Logo at top */}
+      <header className="absolute top-16 left-0 right-0">
+        <div className="flex justify-center">
+          <Logo size="xl-custom" />
         </div>
+      </header>
 
-        <div className="mt-8">
+      {/* Button centered on entire screen */}
+      <main className="absolute inset-0 flex flex-col items-center justify-center gap-6">
+        <div className="flex flex-col items-stretch gap-4">
           <Link
-            href="/closet"
-            className="px-8 py-3 text-white font-semibold rounded-lg transition-all hover:shadow-lg inline-block"
-            style={{
-              background: 'var(--accent-primary)',
-              boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--accent-hover)'}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--accent-primary)'}
+            href="/shuffle"
+            className="px-10 py-4 bg-gray-900 text-white text-4xl tracking-wide hover:bg-gray-800 active:bg-gray-950 transition-colors rounded-sm text-center"
+            style={{ fontWeight: 300 }}
           >
-            Get Started
+            Dress Me
           </Link>
+
+          {/* Secondary buttons - only show when logged in */}
+          {isSignedIn && (
+            <div className="flex gap-2">
+              <Link
+                href="/closet"
+                className="flex-1 py-2 border border-gray-900 text-gray-900 text-xs text-center hover:bg-gray-100 active:bg-gray-200 transition-colors rounded-sm"
+                style={{ fontWeight: 400 }}
+              >
+                Closet
+              </Link>
+              <Link
+                href="/outfits"
+                className="flex-1 py-2 border border-gray-900 text-gray-900 text-xs text-center hover:bg-gray-100 active:bg-gray-200 transition-colors rounded-sm"
+                style={{ fontWeight: 400 }}
+              >
+                Saved Outfits
+              </Link>
+            </div>
+          )}
         </div>
       </main>
-
-      <footer className="mt-16 text-sm" style={{ color: 'var(--text-tertiary)' }}>
-        <p>Built with Next.js, Cloudflare Pages, and AI</p>
-      </footer>
     </div>
   );
 }

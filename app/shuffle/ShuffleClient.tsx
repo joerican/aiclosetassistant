@@ -3,220 +3,501 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ClothingItem } from "@/types";
+import { Dices, ArrowLeft, Sparkles, RefreshCw, Lock, Unlock, Heart, Check, ThumbsDown } from "lucide-react";
 
 export default function ShufflePage() {
-  interface MockItem {
-    id: string;
-    category: "tops" | "bottoms" | "shoes";
-    name: string;
-  }
-
   const [isShuffling, setIsShuffling] = useState(false);
+  const [items, setItems] = useState<{
+    tops: ClothingItem[];
+    bottoms: ClothingItem[];
+    shoes: ClothingItem[];
+  }>({ tops: [], bottoms: [], shoes: [] });
   const [currentOutfit, setCurrentOutfit] = useState<{
-    top?: MockItem;
-    bottom?: MockItem;
-    shoes?: MockItem;
+    top?: ClothingItem;
+    bottom?: ClothingItem;
+    shoes?: ClothingItem;
+  }>({});
+  const [locked, setLocked] = useState<{
+    top: boolean;
+    bottom: boolean;
+    shoes: boolean;
+  }>({ top: false, bottom: false, shoes: false });
+  const [isLoading, setIsLoading] = useState(true);
+  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [isDisliking, setIsDisliking] = useState(false);
+  const [disliked, setDisliked] = useState(false);
+  const [debugLog, setDebugLog] = useState<string>('');
+  const [isAiPicked, setIsAiPicked] = useState(false);
+  const [previousOutfit, setPreviousOutfit] = useState<{
+    top?: ClothingItem;
+    bottom?: ClothingItem;
+    shoes?: ClothingItem;
   }>({});
 
-  // Mock data for demonstration
-  const mockItems = {
-    tops: [
-      { id: "1", category: "tops" as const, name: "White T-Shirt" },
-      { id: "2", category: "tops" as const, name: "Blue Shirt" },
-      { id: "3", category: "tops" as const, name: "Black Hoodie" },
-    ],
-    bottoms: [
-      { id: "4", category: "bottoms" as const, name: "Blue Jeans" },
-      { id: "5", category: "bottoms" as const, name: "Black Pants" },
-      { id: "6", category: "bottoms" as const, name: "Khaki Shorts" },
-    ],
-    shoes: [
-      { id: "7", category: "shoes" as const, name: "White Sneakers" },
-      { id: "8", category: "shoes" as const, name: "Black Boots" },
-      { id: "9", category: "shoes" as const, name: "Brown Loafers" },
-    ],
+  // Fetch items on mount
+  useEffect(() => {
+    const fetchItems = async () => {
+      try {
+        const response = await fetch('/api/get-items');
+        if (!response.ok) throw new Error('Failed to fetch items');
+        const data = await response.json();
+
+        // Group items by category
+        const grouped = {
+          tops: data.items.filter((item: ClothingItem) => item.category === 'tops'),
+          bottoms: data.items.filter((item: ClothingItem) => item.category === 'bottoms'),
+          shoes: data.items.filter((item: ClothingItem) => item.category === 'shoes'),
+        };
+
+        setItems(grouped);
+      } catch (error) {
+        console.error('Error fetching items:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchItems();
+  }, []);
+
+  const getRandomItem = (itemList: ClothingItem[]) => {
+    if (itemList.length === 0) return undefined;
+    return itemList[Math.floor(Math.random() * itemList.length)];
   };
 
-  const getRandomItem = (items: any[]) => {
-    return items[Math.floor(Math.random() * items.length)];
-  };
+  const handleShuffle = async () => {
+    if (items.tops.length === 0 || items.bottoms.length === 0 || items.shoes.length === 0) {
+      return;
+    }
 
-  const handleShuffle = () => {
     setIsShuffling(true);
+    setAiSuggestion(null);
+    setSaved(false);
+    setDisliked(false);
+    setIsAiPicked(false);
 
-    // Simulate slot machine spinning
-    const spinDuration = 2000;
-    const intervalTime = 100;
-    let elapsed = 0;
+    // Start shuffle animation
+    const animationInterval = setInterval(() => {
+      setCurrentOutfit(prev => ({
+        top: locked.top ? prev.top : getRandomItem(items.tops),
+        bottom: locked.bottom ? prev.bottom : getRandomItem(items.bottoms),
+        shoes: locked.shoes ? prev.shoes : getRandomItem(items.shoes),
+      }));
+    }, 100);
 
-    const interval = setInterval(() => {
-      setCurrentOutfit({
-        top: getRandomItem(mockItems.tops),
-        bottom: getRandomItem(mockItems.bottoms),
-        shoes: getRandomItem(mockItems.shoes),
+    // Minimum shuffle duration for visual effect
+    const minShuffleDuration = 1500;
+    const startTime = Date.now();
+
+    try {
+      // Call AI to generate matching outfit
+      const response = await fetch('/api/generate-outfit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locked,
+          currentOutfit,
+          previousOutfit,
+        }),
       });
 
-      elapsed += intervalTime;
-
-      if (elapsed >= spinDuration) {
-        clearInterval(interval);
-        setIsShuffling(false);
+      // Wait for minimum duration
+      const elapsed = Date.now() - startTime;
+      if (elapsed < minShuffleDuration) {
+        await new Promise(resolve => setTimeout(resolve, minShuffleDuration - elapsed));
       }
-    }, intervalTime);
+
+      clearInterval(animationInterval);
+
+      if (response.ok) {
+        const data = await response.json();
+        setDebugLog(`suggestion: ${data.suggestion || 'null'}\nkeys: ${Object.keys(data).join(', ')}`);
+        const newOutfit = {
+          top: data.top,
+          bottom: data.bottom,
+          shoes: data.shoes,
+        };
+        setPreviousOutfit(currentOutfit);
+        setCurrentOutfit(newOutfit);
+        setAiSuggestion(data.suggestion);
+        setIsAiPicked(true);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        setDebugLog(`API error: ${response.status}\n${JSON.stringify(errorData)}`);
+        // Fallback to random if AI fails
+        setCurrentOutfit(prev => ({
+          top: locked.top ? prev.top : getRandomItem(items.tops),
+          bottom: locked.bottom ? prev.bottom : getRandomItem(items.bottoms),
+          shoes: locked.shoes ? prev.shoes : getRandomItem(items.shoes),
+        }));
+        setIsAiPicked(false);
+      }
+    } catch (error) {
+      console.error('Error generating outfit:', error);
+      clearInterval(animationInterval);
+      setCurrentOutfit(prev => ({
+        top: locked.top ? prev.top : getRandomItem(items.tops),
+        bottom: locked.bottom ? prev.bottom : getRandomItem(items.bottoms),
+        shoes: locked.shoes ? prev.shoes : getRandomItem(items.shoes),
+      }));
+    } finally {
+      setIsShuffling(false);
+    }
   };
 
-  const handleSaveOutfit = () => {
-    // TODO: Implement save outfit to database
-    alert("Outfit saved! (Feature coming soon)");
+  const toggleLock = (slot: 'top' | 'bottom' | 'shoes') => {
+    setLocked(prev => ({ ...prev, [slot]: !prev[slot] }));
   };
+
+  const handleSaveOutfit = async () => {
+    if (!currentOutfit.top || !currentOutfit.bottom || !currentOutfit.shoes) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch('/api/save-outfit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topId: currentOutfit.top.id,
+          bottomId: currentOutfit.bottom.id,
+          shoesId: currentOutfit.shoes.id,
+          aiSuggestion,
+        }),
+      });
+
+      if (response.ok) {
+        setSaved(true);
+      }
+    } catch (error) {
+      console.error('Error saving outfit:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDislikeOutfit = async () => {
+    if (!currentOutfit.top || !currentOutfit.bottom || !currentOutfit.shoes) return;
+
+    setIsDisliking(true);
+    try {
+      const response = await fetch('/api/dislike-outfit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topId: currentOutfit.top.id,
+          bottomId: currentOutfit.bottom.id,
+          shoesId: currentOutfit.shoes.id,
+        }),
+      });
+
+      if (response.ok) {
+        setDisliked(true);
+      }
+    } catch (error) {
+      console.error('Error disliking outfit:', error);
+    } finally {
+      setIsDisliking(false);
+    }
+  };
+
+  const getImageUrl = (item: ClothingItem) => {
+    const baseUrl = item.background_removed_url || item.thumbnail_url || item.original_image_url;
+    if (!baseUrl) return '';
+
+    // Add rotation parameter if item has rotation
+    if (item.rotation && item.rotation !== 0) {
+      const separator = baseUrl.includes('?') ? '&' : '?';
+      return `${baseUrl}${separator}rotate=${item.rotation}`;
+    }
+    return baseUrl;
+  };
+
+  const canShuffle = items.tops.length > 0 && items.bottoms.length > 0 && items.shoes.length > 0;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-gray-400" />
+          <p className="text-gray-500">Loading your closet...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="bg-white border-b-2 border-black">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <header className="bg-white border-b border-gray-200">
+        <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex justify-between items-center">
-            <div>
-              <h1 style={{ color: 'var(--text-primary)' }} className="text-2xl font-bold">
-                Outfit Shuffle
-              </h1>
-              <p style={{ color: 'var(--text-secondary)' }} className="text-sm mt-1">
-                Discover new outfit combinations
-              </p>
-            </div>
-            <div className="flex items-center gap-4">
-              <Link
-                href="/closet"
-                style={{ color: 'var(--text-secondary)' }}
-                className="hover:opacity-70 transition-opacity"
-              >
-                Back to Closet
-              </Link>
-            </div>
+            <Link
+              href="/closet"
+              className="p-2 hover:bg-gray-100 transition-colors rounded-lg"
+            >
+              <ArrowLeft size={24} strokeWidth={1.5} />
+            </Link>
+            <h1 className="text-xl font-bold">Outfit Shuffle</h1>
+            <div className="w-10" /> {/* Spacer */}
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="text-center mb-8">
-          <h2 style={{ color: 'var(--text-primary)' }} className="text-3xl font-bold mb-2">
-            Pull the lever to shuffle!
-          </h2>
-          <p style={{ color: 'var(--text-secondary)' }}>
-            Get inspired with random outfit combinations from your closet
-          </p>
-        </div>
-
-        {/* Slot Machine */}
-        <div style={{ backgroundColor: 'var(--accent-primary)' }} className="rounded-2xl p-8 mb-8 border-2 border-black">
-          <div className="grid grid-cols-3 gap-6 mb-8">
-            {/* Top Slot */}
-            <div className={`bg-white border-2 border-black rounded-xl p-6 min-h-[300px] flex flex-col items-center justify-center transition-transform ${isShuffling ? "animate-pulse" : ""}`}>
-              <div className="text-6xl mb-4">👕</div>
-              <h3 style={{ color: 'var(--text-primary)' }} className="text-lg font-bold mb-2">Top</h3>
-              {currentOutfit.top ? (
-                <div className="text-center">
-                  <div className="w-32 h-32 bg-white rounded-lg mb-2 flex items-center justify-center">
-                    <span className="text-4xl">👕</span>
-                  </div>
-                  <p style={{ color: 'var(--text-primary)' }} className="text-sm font-medium">{currentOutfit.top.name}</p>
-                </div>
-              ) : (
-                <p style={{ color: 'var(--text-secondary)' }}>Pull to shuffle</p>
-              )}
-            </div>
-
-            {/* Bottom Slot */}
-            <div className={`bg-white border-2 border-black rounded-xl p-6 min-h-[300px] flex flex-col items-center justify-center transition-transform ${isShuffling ? "animate-pulse" : ""}`}>
-              <div className="text-6xl mb-4">👖</div>
-              <h3 style={{ color: 'var(--text-primary)' }} className="text-lg font-bold mb-2">Bottom</h3>
-              {currentOutfit.bottom ? (
-                <div className="text-center">
-                  <div className="w-32 h-32 bg-white rounded-lg mb-2 flex items-center justify-center">
-                    <span className="text-4xl">👖</span>
-                  </div>
-                  <p style={{ color: 'var(--text-primary)' }} className="text-sm font-medium">{currentOutfit.bottom.name}</p>
-                </div>
-              ) : (
-                <p style={{ color: 'var(--text-secondary)' }}>Pull to shuffle</p>
-              )}
-            </div>
-
-            {/* Shoes Slot */}
-            <div className={`bg-white border-2 border-black rounded-xl p-6 min-h-[300px] flex flex-col items-center justify-center transition-transform ${isShuffling ? "animate-pulse" : ""}`}>
-              <div className="text-6xl mb-4">👟</div>
-              <h3 style={{ color: 'var(--text-primary)' }} className="text-lg font-bold mb-2">Shoes</h3>
-              {currentOutfit.shoes ? (
-                <div className="text-center">
-                  <div className="w-32 h-32 bg-white rounded-lg mb-2 flex items-center justify-center">
-                    <span className="text-4xl">👟</span>
-                  </div>
-                  <p style={{ color: 'var(--text-primary)' }} className="text-sm font-medium">{currentOutfit.shoes.name}</p>
-                </div>
-              ) : (
-                <p style={{ color: 'var(--text-secondary)' }}>Pull to shuffle</p>
-              )}
-            </div>
-          </div>
-
-          {/* Lever/Control */}
-          <div className="flex flex-col items-center">
-            <button
-              onClick={handleShuffle}
-              disabled={isShuffling}
-              className="relative group"
-            >
-              <div className="w-24 h-24 bg-yellow-400 rounded-full shadow-lg transform transition-transform group-hover:scale-110 group-active:scale-95 flex items-center justify-center disabled:opacity-50">
-                <span className="text-4xl">🎰</span>
-              </div>
-              <div className="mt-2 text-white font-bold text-lg">
-                {isShuffling ? "Shuffling..." : "Pull!"}
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        {currentOutfit.top && currentOutfit.bottom && currentOutfit.shoes && !isShuffling && (
-          <div className="flex gap-4 justify-center">
-            <button
-              onClick={handleShuffle}
-              style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
-              className="px-4 py-2 text-white rounded-lg font-medium transition-all hover:shadow-lg"
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
-            >
-              Shuffle Again
-            </button>
-            <button
-              onClick={handleSaveOutfit}
-              style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
-              className="px-4 py-2 text-white rounded-lg font-medium transition-all hover:shadow-lg"
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
-            >
-              Save This Outfit
-            </button>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!currentOutfit.top && !isShuffling && (
-          <div className="text-center py-8">
-            <p style={{ color: 'var(--text-secondary)' }} className="mb-4">
-              You need at least one item in each category to shuffle
+      <main className="max-w-md mx-auto px-4 py-6">
+        {!canShuffle ? (
+          <div className="text-center py-12">
+            <Dices className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+            <h2 className="text-xl font-bold mb-2">Not enough items</h2>
+            <p className="text-gray-500 mb-6">
+              You need at least one top, one bottom, and one pair of shoes to shuffle outfits.
+            </p>
+            <p className="text-sm text-gray-400 mb-4">
+              Current: {items.tops.length} tops, {items.bottoms.length} bottoms, {items.shoes.length} shoes
             </p>
             <Link
               href="/upload"
-              style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)' }}
-              className="inline-block px-4 py-2 text-white rounded-lg font-medium transition-all hover:shadow-lg"
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
+              className="inline-block px-6 py-3 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
             >
-              Add Items to Your Closet
+              Add Items
             </Link>
           </div>
+        ) : (
+          <>
+            {/* Slot Machine Grid - Vertical Stack */}
+            <div className="space-y-3 mb-6">
+              {/* Top Slot */}
+              <div
+                className={`bg-gray-50 border border-gray-200 rounded-xl p-4 transition-all ${
+                  isShuffling && !locked.top ? 'animate-pulse border-yellow-400' : ''
+                } ${locked.top ? 'ring-2 ring-blue-400' : ''}`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-xs font-bold text-gray-500 uppercase tracking-wide">Top</div>
+                  <button
+                    onClick={() => toggleLock('top')}
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      locked.top ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-200 text-gray-400'
+                    }`}
+                    disabled={!currentOutfit.top}
+                  >
+                    {locked.top ? <Lock size={16} /> : <Unlock size={16} />}
+                  </button>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="w-36 h-36 bg-white rounded-lg border border-gray-200 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                    {currentOutfit.top ? (
+                      <img
+                        src={getImageUrl(currentOutfit.top)}
+                        alt={currentOutfit.top.subcategory || 'Top'}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <span className="text-3xl text-gray-300">👕</span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {currentOutfit.top ? (
+                      <>
+                        <p className="font-medium truncate">{currentOutfit.top.subcategory || 'Top'}</p>
+                        <p className="text-sm text-gray-500 truncate">{currentOutfit.top.color}</p>
+                        {currentOutfit.top.style && (
+                          <p className="text-xs text-gray-400">{currentOutfit.top.style}</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-gray-400 text-sm">Tap shuffle to start</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Slot */}
+              <div
+                className={`bg-gray-50 border border-gray-200 rounded-xl p-4 transition-all ${
+                  isShuffling && !locked.bottom ? 'animate-pulse border-yellow-400' : ''
+                } ${locked.bottom ? 'ring-2 ring-blue-400' : ''}`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-xs font-bold text-gray-500 uppercase tracking-wide">Bottom</div>
+                  <button
+                    onClick={() => toggleLock('bottom')}
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      locked.bottom ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-200 text-gray-400'
+                    }`}
+                    disabled={!currentOutfit.bottom}
+                  >
+                    {locked.bottom ? <Lock size={16} /> : <Unlock size={16} />}
+                  </button>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="w-36 h-36 bg-white rounded-lg border border-gray-200 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                    {currentOutfit.bottom ? (
+                      <img
+                        src={getImageUrl(currentOutfit.bottom)}
+                        alt={currentOutfit.bottom.subcategory || 'Bottom'}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <span className="text-3xl text-gray-300">👖</span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {currentOutfit.bottom ? (
+                      <>
+                        <p className="font-medium truncate">{currentOutfit.bottom.subcategory || 'Bottom'}</p>
+                        <p className="text-sm text-gray-500 truncate">{currentOutfit.bottom.color}</p>
+                        {currentOutfit.bottom.style && (
+                          <p className="text-xs text-gray-400">{currentOutfit.bottom.style}</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-gray-400 text-sm">Tap shuffle to start</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Shoes Slot */}
+              <div
+                className={`bg-gray-50 border border-gray-200 rounded-xl p-4 transition-all ${
+                  isShuffling && !locked.shoes ? 'animate-pulse border-yellow-400' : ''
+                } ${locked.shoes ? 'ring-2 ring-blue-400' : ''}`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-xs font-bold text-gray-500 uppercase tracking-wide">Shoes</div>
+                  <button
+                    onClick={() => toggleLock('shoes')}
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      locked.shoes ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-200 text-gray-400'
+                    }`}
+                    disabled={!currentOutfit.shoes}
+                  >
+                    {locked.shoes ? <Lock size={16} /> : <Unlock size={16} />}
+                  </button>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="w-36 h-36 bg-white rounded-lg border border-gray-200 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                    {currentOutfit.shoes ? (
+                      <img
+                        src={getImageUrl(currentOutfit.shoes)}
+                        alt={currentOutfit.shoes.subcategory || 'Shoes'}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <span className="text-3xl text-gray-300">👟</span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {currentOutfit.shoes ? (
+                      <>
+                        <p className="font-medium truncate">{currentOutfit.shoes.subcategory || 'Shoes'}</p>
+                        <p className="text-sm text-gray-500 truncate">{currentOutfit.shoes.color}</p>
+                        {currentOutfit.shoes.style && (
+                          <p className="text-xs text-gray-400">{currentOutfit.shoes.style}</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-gray-400 text-sm">Tap shuffle to start</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* AI Suggestion */}
+            {aiSuggestion && !isShuffling && (
+              <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-100">
+                <div className="flex items-start gap-3">
+                  <Sparkles className="w-5 h-5 text-purple-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-xs font-bold text-purple-600 mb-1 uppercase tracking-wide">AI Stylist</p>
+                    <p className="text-sm text-gray-700">{aiSuggestion}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="space-y-3">
+              {/* Shuffle Button */}
+              <button
+                onClick={handleShuffle}
+                disabled={isShuffling}
+                className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all ${
+                  isShuffling
+                    ? 'bg-yellow-400 text-black'
+                    : 'bg-gray-900 text-white hover:bg-gray-800 active:scale-[0.98]'
+                }`}
+              >
+                <Dices className={`w-6 h-6 ${isShuffling ? 'animate-spin' : ''}`} />
+                {isShuffling ? 'Matching...' : 'Shuffle Outfit'}
+              </button>
+
+              {/* Like/Dislike Buttons */}
+              {currentOutfit.top && currentOutfit.bottom && currentOutfit.shoes && !isShuffling && (
+                <div className="flex gap-3">
+                  {/* Dislike Button */}
+                  <button
+                    onClick={handleDislikeOutfit}
+                    disabled={isDisliking || disliked || saved}
+                    className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all border ${
+                      disliked
+                        ? 'bg-red-50 border-red-200 text-red-600'
+                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <ThumbsDown className="w-5 h-5" />
+                    {disliked ? 'Noted' : isDisliking ? '...' : 'Nope'}
+                  </button>
+
+                  {/* Save Button */}
+                  <button
+                    onClick={handleSaveOutfit}
+                    disabled={isSaving || saved || disliked}
+                    className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all border ${
+                      saved
+                        ? 'bg-green-50 border-green-200 text-green-600'
+                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {saved ? (
+                      <>
+                        <Check className="w-5 h-5" />
+                        Saved!
+                      </>
+                    ) : (
+                      <>
+                        <Heart className="w-5 h-5" />
+                        {isSaving ? '...' : 'Save'}
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Stats */}
+            <div className="mt-4 text-center text-xs text-gray-400">
+              {items.tops.length} tops • {items.bottoms.length} bottoms • {items.shoes.length} shoes
+            </div>
+
+            {/* AI/Random Indicator */}
+            {currentOutfit.top && !isShuffling && (
+              <div className={`mt-4 text-center text-xs font-medium ${isAiPicked ? 'text-purple-600' : 'text-orange-500'}`}>
+                {isAiPicked ? '✨ AI Matched' : '🎲 Random'}
+              </div>
+            )}
+
+            {/* Debug Log */}
+            {debugLog && (
+              <div className="mt-4 p-3 bg-gray-100 rounded text-xs font-mono whitespace-pre-wrap">
+                {debugLog}
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>

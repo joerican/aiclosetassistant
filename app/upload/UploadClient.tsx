@@ -66,6 +66,8 @@ interface QueuedItem {
     tags?: string[];
   };
   error?: string;
+  // Pre-computed during resize phase
+  resizedBlob?: Blob;
 }
 
 export default function UploadPage() {
@@ -73,6 +75,8 @@ export default function UploadPage() {
   const [imageQueue, setImageQueue] = useState<QueuedItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const currentIndexRef = useRef(0);
+  const processedItemsRef = useRef<Set<string>>(new Set()); // Track items we've already processed to avoid duplicate polling
+  const uploadAbortedRef = useRef(false); // Track if upload was cancelled
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -106,6 +110,18 @@ export default function UploadPage() {
   const [subcategory, setSubcategory] = useState<string>("");
   const [customSubcategory, setCustomSubcategory] = useState<string>("");
   const [colors, setColors] = useState<string>("");
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [showColorDropdown, setShowColorDropdown] = useState(false);
+  const [customColorInput, setCustomColorInput] = useState("");
+
+  // Common clothing colors
+  const commonColors = [
+    "Black", "White", "Gray", "Navy", "Blue", "Light Blue",
+    "Red", "Pink", "Green", "Yellow", "Orange", "Purple",
+    "Brown", "Beige", "Tan", "Cream", "Burgundy", "Maroon",
+    "Olive", "Teal", "Turquoise", "Lavender", "Coral", "Gold",
+    "Silver", "Denim", "Khaki", "Charcoal"
+  ];
 
   // Optional fields (collapsed by default)
   const [showOptionalFields, setShowOptionalFields] = useState(false);
@@ -130,6 +146,21 @@ export default function UploadPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const colorDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close color dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (colorDropdownRef.current && !colorDropdownRef.current.contains(event.target as Node)) {
+        setShowColorDropdown(false);
+      }
+    };
+
+    if (showColorDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showColorDropdown]);
 
   const rotateLeft = () => {
     const newRotation = (rotation - 90 + 360) % 360;
@@ -236,7 +267,7 @@ export default function UploadPage() {
   };
 
   const subcategoryOptions: Record<Category, string[]> = {
-    tops: ["t-shirt", "shirt", "blouse", "sweater", "hoodie", "tank top", "cardigan", "polo"],
+    tops: ["t-shirt", "shirt", "button-up", "blouse", "sweater", "hoodie", "tank top", "cardigan", "polo"],
     bottoms: ["jeans", "pants", "shorts", "skirt", "leggings", "dress pants", "joggers"],
     shoes: ["sneakers", "boots", "sandals", "heels", "flats", "loafers", "dress shoes"],
     outerwear: ["jacket", "coat", "blazer", "windbreaker", "parka", "vest", "trench coat"],
@@ -340,108 +371,105 @@ export default function UploadPage() {
     }
   };
 
-  // Process all items in background with parallel batches
+  // Process all items in background using a decoupled pipeline:
+  // Phase 1: Resize + Upload ALL items to R2 as fast as possible (sequential, no waiting)
+  // Phase 2: Poll for server-side processing completion (handled by useEffect)
+  // This ensures all images hit the cloud ASAP so workers can process them
   const processQueueInBackground = async (items: QueuedItem[]) => {
-    console.log('[Queue] Starting processing of', items.length, 'items');
-    let successCount = 0;
-    let completedCount = 0;
-    const BATCH_SIZE = 6; // Process 6 items concurrently (trimming offloaded to IMAGE_TRIM Worker)
+    console.log('[Queue] Starting upload pipeline for', items.length, 'items');
+    let uploadedCount = 0;
 
-    // Process in batches of BATCH_SIZE
-    for (let batchStart = 0; batchStart < items.length; batchStart += BATCH_SIZE) {
-      const batch = items.slice(batchStart, batchStart + BATCH_SIZE);
-      console.log('[Queue] Processing batch starting at', batchStart, 'with', batch.length, 'items');
+    // Clear the processed items tracker for new batch
+    processedItemsRef.current.clear();
+    uploadAbortedRef.current = false; // Reset abort flag
 
-      // Mark all items in batch as processing
-      setImageQueue(prev => prev.map(q => {
-        if (batch.some(b => b.id === q.id)) {
-          return { ...q, status: 'processing' };
-        }
-        return q;
-      }));
+    // Phase 1: Resize and upload each item sequentially
+    // No waiting for processing - just get everything into R2
+    for (let i = 0; i < items.length; i++) {
+      // Check if upload was cancelled
+      if (uploadAbortedRef.current) {
+        console.log('[Queue] Upload cancelled by user');
+        break;
+      }
 
-      // Process batch in parallel
-      const batchPromises = batch.map(async (item, batchIdx) => {
-        const itemNum = batchStart + batchIdx + 1;
-        try {
-          addLog(`Processing item ${itemNum}...`);
-          const result = await processItemInBackground(item);
-          console.log('[Queue] Item', itemNum, 'completed successfully');
-          addLog(`Item ${itemNum} ✓`);
+      const item = items[i];
+      const itemNum = i + 1;
 
-          // Update with results
-          const updatedItem = { ...item, ...result, status: 'ready' as const };
-          setImageQueue(prev => prev.map(q =>
-            q.id === item.id ? updatedItem : q
-          ));
+      try {
+        // Update status to uploading
+        setImageQueue(prev => prev.map(q =>
+          q.id === item.id ? { ...q, status: 'uploading' as const } : q
+        ));
+        addLog(`Uploading ${itemNum}/${items.length}...`);
 
-          return { success: true, item: updatedItem };
-        } catch (error) {
-          console.error('[Queue] Error processing item', itemNum, ':', error);
-          const errorMessage = String(error);
-          const isSkipped = errorMessage.includes('Duplicate skipped');
+        // Resize on client
+        console.log(`[Upload] Resizing item ${itemNum}`);
+        const resizedBlob = await resizeImage(item.file, 600, 0.85, 'image/jpeg');
+        const imageHash = await hashImageFile(item.file);
 
-          if (isSkipped) {
-            addLog(`Item ${itemNum} skipped (duplicate)`);
-          } else {
-            addLog(`Item ${itemNum} ✗ error`);
+        // Check for duplicates (quick check, doesn't block)
+        const duplicateResult = await checkDuplicate(imageHash);
+
+        // Upload to R2 (with retry)
+        console.log(`[Upload] Uploading item ${itemNum}`);
+        const formData = new FormData();
+        formData.append('image', new File([resizedBlob], 'image.jpg', { type: 'image/jpeg' }));
+        formData.append('imageHash', imageHash);
+
+        let response: Response | null = null;
+        let lastError: Error | null = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            response = await fetch('/api/upload-pending', {
+              method: 'POST',
+              body: formData,
+            });
+            if (response.ok) break;
+            lastError = new Error(`Upload failed with status ${response.status}`);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 500 * attempt));
+          } catch (e) {
+            lastError = e instanceof Error ? e : new Error('Network error');
+            if (attempt < 3) await new Promise(r => setTimeout(r, 500 * attempt));
           }
-
-          setImageQueue(prev => prev.map(q =>
-            q.id === item.id ? { ...q, status: 'error', error: errorMessage } : q
-          ));
-
-          return { success: false, error: errorMessage };
         }
-      });
 
-      // Wait for all items in batch to complete
-      const results = await Promise.all(batchPromises);
+        if (!response?.ok) {
+          throw lastError || new Error('Upload failed');
+        }
 
-      // Update counts
-      const batchSuccesses = results.filter(r => r.success).length;
-      successCount += batchSuccesses;
-      completedCount += batch.length;
-      setProcessedCount(completedCount);
+        const { itemId } = await response.json();
+        console.log(`[Upload] Item ${itemNum} uploaded, server ID: ${itemId}`);
 
-      console.log('[Queue] Batch complete:', batchSuccesses, 'successful,', completedCount, 'total processed');
+        // Update queue with server ID and mark as processing (server-side)
+        setImageQueue(prev => prev.map(q =>
+          q.id === item.id ? {
+            ...q,
+            itemId,
+            imageHash,
+            status: 'processing' as const,
+            isDuplicate: duplicateResult.duplicate,
+            duplicateInfo: duplicateResult.existingItem
+          } : q
+        ));
+
+        uploadedCount++;
+        setProcessedCount(uploadedCount);
+        addLog(`Uploaded ${itemNum}/${items.length} ✓`);
+
+      } catch (error) {
+        console.error(`[Upload] Error on item ${itemNum}:`, error);
+        setImageQueue(prev => prev.map(q =>
+          q.id === item.id ? { ...q, status: 'error' as const, error: String(error) } : q
+        ));
+        addLog(`Upload ${itemNum} failed`);
+      }
     }
 
-    console.log('[Queue] All items processed:', successCount, 'successful of', items.length);
-
-    // Mark all processing complete
-    setAllProcessingComplete(true);
-    setIsProcessing(false);
-    setIsAnalyzing(false);
-
-    // Find first ready item and show it
-    // Need to get the latest queue state
-    setImageQueue(prev => {
-      const firstReadyIdx = prev.findIndex(item => item.status === 'ready');
-      console.log('[Queue] Looking for first ready item, found at index:', firstReadyIdx);
-
-      if (firstReadyIdx >= 0) {
-        const readyItem = prev[firstReadyIdx];
-        console.log('[Queue] Showing first ready item:', readyItem.id);
-
-        // Use setTimeout to ensure state updates happen after this setter completes
-        setTimeout(() => {
-          setCurrentIndex(firstReadyIdx);
-          updateDisplayFromQueueItem(readyItem);
-          setShowConfirmation(true);
-        }, 0);
-      } else {
-        console.log('[Queue] No ready items found - all failed or skipped');
-        setTimeout(() => {
-          setShowConfirmation(false);
-          // Reset if nothing to show
-          setSelectedFile(null);
-          setPreview("");
-          alert('All items failed to process or were skipped.');
-        }, 0);
-      }
-      return prev;
-    });
+    console.log(`[Queue] Upload loop finished: ${uploadedCount}/${items.length} uploaded successfully`);
+    if (uploadedCount < items.length) {
+      console.warn(`[Queue] WARNING: Only ${uploadedCount} of ${items.length} items uploaded!`);
+    }
+    setAllProcessingComplete(true); // Uploads complete, polling handles the rest
   };
 
   // Processing log for UI
@@ -451,59 +479,149 @@ export default function UploadPage() {
     setProcessingLog(prev => [...prev.slice(-9), message]); // Keep last 10 messages
   };
 
+  // Hamming distance for comparing perceptual hashes
+  const hammingDistance = (hash1: string, hash2: string): number => {
+    if (hash1.length !== hash2.length) return 64; // Max distance
+    let distance = 0;
+    const bin1 = BigInt('0x' + hash1);
+    const bin2 = BigInt('0x' + hash2);
+    let xor = bin1 ^ bin2;
+    while (xor > BigInt(0)) {
+      distance += Number(xor & BigInt(1));
+      xor >>= BigInt(1);
+    }
+    return distance;
+  };
+
   // Process a single item and return results
-  const processItemInBackground = async (item: QueuedItem): Promise<Partial<QueuedItem>> => {
+  // If resizedBlob and imageHash are provided, skip the resize step (already done in pipeline)
+  const processItemInBackground = async (
+    item: QueuedItem,
+    preResizedBlob?: Blob,
+    preComputedHash?: string
+  ): Promise<Partial<QueuedItem>> => {
     try {
-      // Client resize to 600px JPEG (fast upload)
-      const resizedBlob = await resizeImage(item.file, 600, 0.85, 'image/jpeg');
+      // Use pre-resized data if available, otherwise resize now (for single uploads)
+      const resizedBlob = preResizedBlob || await resizeImage(item.file, 600, 0.85, 'image/jpeg');
+      const imageHash = preComputedHash || await hashImageFile(item.file);
 
-      // Compute hash for duplicate detection
-      const imageHash = await hashImageFile(item.file);
-
-      // Check for duplicates before processing
-      const duplicateResult = await checkDuplicate(imageHash);
-      let isDuplicate = false;
-      let duplicateInfo = undefined;
-
-      if (duplicateResult.duplicate && duplicateResult.existingItem) {
-        isDuplicate = true;
-        duplicateInfo = {
-          subcategory: duplicateResult.existingItem.subcategory,
-          color: duplicateResult.existingItem.color,
-          brand: duplicateResult.existingItem.brand,
-        };
+      // Check for duplicates in current batch (in-memory)
+      const HAMMING_THRESHOLD = 10;
+      let batchDuplicate = false;
+      for (const queueItem of imageQueue) {
+        if (queueItem.id !== item.id && queueItem.imageHash) {
+          const distance = hammingDistance(imageHash, queueItem.imageHash);
+          if (distance <= HAMMING_THRESHOLD) {
+            console.log(`[Duplicate] Found duplicate in current batch - distance: ${distance}`);
+            batchDuplicate = true;
+            break;
+          }
+        }
       }
 
-      // Send to server for BG removal + AI analysis
+      // Check for duplicates against already-saved items (status='completed')
+      const duplicateResult = await checkDuplicate(imageHash);
+
+      // Combine both checks
+      const isDuplicate = batchDuplicate || duplicateResult.duplicate;
+
+      // Note: Duplicate check runs but doesn't block - user can proceed
+      // The duplicate info is stored and will be shown in the UI
+
+      // Send to queue for async processing
       const formData = new FormData();
       formData.append('image', new File([resizedBlob], 'image.jpg', { type: 'image/jpeg' }));
       formData.append('imageHash', imageHash);
-      formData.append('userId', 'default-user');
 
-      const response = await fetch('/api/process-item', {
-        method: 'POST',
-        body: formData,
-      });
+      // Retry upload up to 3 times on failure (handles 408 timeouts)
+      let response: Response | null = null;
+      let lastError: Error | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          response = await fetch('/api/upload-pending', {
+            method: 'POST',
+            body: formData,
+          });
+          if (response.ok) break;
 
-      if (!response.ok) {
-        throw new Error('Processing failed');
+          const errorData = await response.json().catch(() => ({}));
+          lastError = new Error(errorData.error || `Upload failed with status ${response.status}`);
+          console.log(`[Upload] Attempt ${attempt} failed:`, response.status);
+
+          if (attempt < 3) {
+            await new Promise(r => setTimeout(r, 1000 * attempt)); // Exponential backoff
+          }
+        } catch (e) {
+          lastError = e instanceof Error ? e : new Error('Network error');
+          console.log(`[Upload] Attempt ${attempt} network error:`, e);
+          if (attempt < 3) {
+            await new Promise(r => setTimeout(r, 1000 * attempt));
+          }
+        }
       }
 
-      const result = await response.json();
+      if (!response?.ok) {
+        throw lastError || new Error('Upload failed after 3 attempts');
+      }
 
-      // Server stores image in R2, just use the URL for preview
-      const processedPreview = result.imageUrl;
+      const { itemId } = await response.json();
 
-      return {
-        metadata: result.metadata,
-        processedPreview,
-        processedImage: null, // Image already in R2
-        itemId: result.itemId,
-        imageUrl: result.imageUrl,
-        imageHash: result.imageHash,
-        isDuplicate,
-        duplicateInfo,
-      } as Partial<QueuedItem> & { itemId: string; imageUrl: string; imageHash: string };
+      // IMPORTANT: Save itemId to queue item immediately so polling useEffect can find it
+      // This allows the discard navigation to work correctly
+      setImageQueue(prev => prev.map(q =>
+        q.id === item.id ? { ...q, itemId } : q
+      ));
+
+      // Poll for completion
+      let attempts = 0;
+      const maxAttempts = 120; // 120 seconds max
+      const pollInterval = 1000; // 1 second
+
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+        const statusResponse = await fetch(`/api/item-status/${itemId}`);
+        if (!statusResponse.ok) {
+          throw new Error('Failed to check status');
+        }
+
+        const statusData = await statusResponse.json();
+
+        if (statusData.status === 'processed') {
+          // Processing complete - color comes as comma-separated string from DB
+          const colorArray = statusData.color
+            ? statusData.color.split(',').map((c: string) => c.trim())
+            : [];
+          return {
+            metadata: {
+              category: statusData.category,
+              subcategory: statusData.subcategory,
+              colors: colorArray,
+              brand: statusData.brand,
+              description: statusData.description,
+              tags: statusData.tags || [],
+            },
+            processedPreview: statusData.original_image_url,
+            processedImage: null, // Image already in R2
+            itemId: statusData.id,
+            imageUrl: statusData.original_image_url,
+            imageHash: statusData.image_hash,
+            isDuplicate: isDuplicate,  // Combined check: batch + database
+            duplicateInfo: (batchDuplicate || duplicateResult.duplicate) ? {
+              subcategory: duplicateResult.existingItem?.subcategory,
+              color: duplicateResult.existingItem?.color,
+              brand: duplicateResult.existingItem?.brand,
+            } : undefined,
+          } as Partial<QueuedItem> & { itemId: string; imageUrl: string; imageHash: string };
+        } else if (statusData.status === 'failed') {
+          throw new Error(statusData.error_message || 'Processing failed');
+        }
+
+        // Still processing, continue polling
+        attempts++;
+      }
+
+      throw new Error('Processing timed out');
     } catch (error) {
       console.error('Error in processItemInBackground:', error);
       throw error;
@@ -512,13 +630,25 @@ export default function UploadPage() {
 
   // Update display state from queue item
   const updateDisplayFromQueueItem = (item: QueuedItem) => {
+    console.log('[updateDisplay] Updating display for item:', {
+      id: item.id,
+      status: item.status,
+      hasProcessedPreview: !!item.processedPreview,
+      hasMetadata: !!item.metadata,
+      processedPreviewLength: item.processedPreview?.length || 0
+    });
+
     setSelectedFile(item.file);
     setPreview(item.preview);
     setProcessedPreview(item.processedPreview || "");
     setProcessedImage(item.processedImage || null);
-    setShowConfirmation(item.status === 'ready');
-    setIsProcessing(item.status === 'processing');
-    setIsAnalyzing(item.status === 'processing');
+
+    // Only show confirmation if item is ready AND has a processed preview
+    // Otherwise, keep showing the processing spinner
+    const isReady = item.status === 'ready' && !!item.processedPreview;
+    setShowConfirmation(isReady);
+    setIsProcessing(!isReady);
+    setIsAnalyzing(!isReady);
     setRotation(item.rotation || 0);  // Load rotation from item
 
     // Apply metadata to form fields
@@ -567,6 +697,7 @@ export default function UploadPage() {
             c.name.charAt(0).toUpperCase() + c.name.slice(1).toLowerCase()
           );
           setColors(colorNames.join(", "));
+          setSelectedColors(colorNames);
         } else {
           // Old format - just strings
           const colorStrings = colorsArray as string[];
@@ -574,6 +705,7 @@ export default function UploadPage() {
             (c: string) => c.charAt(0).toUpperCase() + c.slice(1).toLowerCase()
           );
           setColors(capitalizedColors.join(", "));
+          setSelectedColors(capitalizedColors);
           // Convert to palette format with equal percentages
           const percent = Math.floor(100 / colorStrings.length);
           setColorPalette(colorStrings.map((c, i) => ({
@@ -614,6 +746,7 @@ export default function UploadPage() {
       setSubcategory("");
       setCustomSubcategory("");
       setColors("");
+      setSelectedColors([]);
       setColorPalette([]);
       setBrand("");
       setDescription("");
@@ -622,27 +755,171 @@ export default function UploadPage() {
 
   // Move to next item in queue after successful upload
   const moveToNextItem = () => {
-    const nextIndex = currentIndex + 1;
-
     // Collapse optional fields and scroll to top for next item
     setShowOptionalFields(false);
     setRotation(0);
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    if (nextIndex < imageQueue.length) {
-      setCurrentIndex(nextIndex);
-      const nextItem = imageQueue[nextIndex];
+    // Find next ready item AFTER current position
+    let nextReadyIndex = imageQueue.findIndex((item, idx) =>
+      idx > currentIndex && item.status === 'ready'
+    );
+
+    // If no ready items after, check if there are any ready items BEFORE (that we might have skipped)
+    if (nextReadyIndex === -1) {
+      nextReadyIndex = imageQueue.findIndex((item, idx) =>
+        idx !== currentIndex && item.status === 'ready'
+      );
+    }
+
+    if (nextReadyIndex >= 0) {
+      // Found a ready item - show it immediately
+      console.log(`[Queue] Moving to next ready item at index ${nextReadyIndex}`);
+      setCurrentIndex(nextReadyIndex);
+      const nextItem = imageQueue[nextReadyIndex];
       updateDisplayFromQueueItem(nextItem);
     } else {
-      // All done - reset everything
-      setImageQueue([]);
-      setCurrentIndex(0);
-      setSelectedFile(null);
-      setPreview("");
-      setProcessedPreview("");
-      setShowConfirmation(false);
+      // No ready items - check if there are ANY items still processing (anywhere in queue)
+      const hasProcessing = imageQueue.some((item, idx) =>
+        idx !== currentIndex && (item.status === 'processing' || item.status === 'pending')
+      );
+
+      if (hasProcessing) {
+        // Items still processing - show spinner and wait
+        // Find the first processing item to wait for
+        const nextProcessingIdx = imageQueue.findIndex((item, idx) =>
+          idx > currentIndex && (item.status === 'processing' || item.status === 'pending')
+        );
+        const waitIdx = nextProcessingIdx >= 0 ? nextProcessingIdx : currentIndex + 1;
+        console.log('[Queue] No ready items, showing spinner while waiting at:', waitIdx);
+        setCurrentIndex(Math.min(waitIdx, imageQueue.length - 1));
+        setShowConfirmation(false);
+        setIsProcessing(true);
+        setIsAnalyzing(true);
+      } else {
+        // All done - go to closet
+        console.log('[Queue] All items completed, going to closet');
+        window.location.href = "/closet";
+      }
     }
   };
+
+  // Poll ALL items that are still processing (have itemId but status is 'processing')
+  // This runs continuously in background regardless of which item user is viewing
+  useEffect(() => {
+    if (imageQueue.length === 0) return;
+
+    // Find items that need polling (have itemId and are still processing)
+    const processingItems = imageQueue.filter(item =>
+      item.status === 'processing' && item.itemId && !processedItemsRef.current.has(item.id)
+    );
+
+    if (processingItems.length === 0) return;
+
+    const pollAllItems = async () => {
+      for (const item of processingItems) {
+        // Double-check we haven't already processed this item
+        if (processedItemsRef.current.has(item.id)) continue;
+
+        try {
+          const response = await fetch(`/api/item-status/${item.itemId}`);
+          if (!response.ok) continue;
+
+          const statusData = await response.json();
+
+          if (statusData.status === 'processed') {
+            // Mark as processed to avoid duplicate handling
+            processedItemsRef.current.add(item.id);
+            console.log('[Poll] Item finished processing:', item.id);
+
+            const colorArray = statusData.color
+              ? statusData.color.split(',').map((c: string) => c.trim())
+              : [];
+
+            const updatedItem = {
+              ...item,
+              status: 'ready' as const,
+              processedPreview: statusData.original_image_url,
+              imageUrl: statusData.original_image_url,  // Set imageUrl for save-item
+              metadata: {
+                category: statusData.category,
+                subcategory: statusData.subcategory,
+                colors: colorArray,
+                brand: statusData.brand,
+                description: statusData.description,
+                tags: statusData.tags || [],
+              },
+            };
+
+            setImageQueue(prev => prev.map(q =>
+              q.id === item.id ? updatedItem : q
+            ));
+
+            // If this is the current item being viewed, update display
+            if (imageQueue[currentIndex]?.id === item.id) {
+              updateDisplayFromQueueItem(updatedItem);
+              setShowConfirmation(true);
+              setIsProcessing(false);
+              setIsAnalyzing(false);
+            }
+          } else if (statusData.status === 'failed') {
+            processedItemsRef.current.add(item.id);
+            console.error('[Poll] Item failed:', item.id, statusData.error_message);
+            setImageQueue(prev => prev.map(q =>
+              q.id === item.id
+                ? { ...q, status: 'error' as const, error: statusData.error_message }
+                : q
+            ));
+
+            // If this is the current item, update UI
+            if (imageQueue[currentIndex]?.id === item.id) {
+              setIsProcessing(false);
+              setIsAnalyzing(false);
+            }
+          }
+        } catch (error) {
+          console.error('[Poll] Error checking item:', item.id, error);
+        }
+      }
+    };
+
+    // Poll every second
+    const pollInterval = setInterval(pollAllItems, 1000);
+    pollAllItems(); // Initial poll
+
+    return () => clearInterval(pollInterval);
+  }, [imageQueue, currentIndex]);
+
+  // Watch for ready items while showing spinner
+  // Shows the FIRST ready item (including current index) when user is on spinner
+  useEffect(() => {
+    // Only check if we're on the spinner (not showing confirmation)
+    if (isProcessing && !showConfirmation && imageQueue.length > 0) {
+      // First check if CURRENT item is ready
+      const currentItem = imageQueue[currentIndex];
+      if (currentItem?.status === 'ready' && currentItem.processedPreview) {
+        console.log(`[Queue] Current item ${currentIndex} is ready, showing it`);
+        updateDisplayFromQueueItem(currentItem);
+        setShowConfirmation(true);
+        setIsProcessing(false);
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // Otherwise find ANY ready item (starting from beginning)
+      const anyReadyIndex = imageQueue.findIndex(item => item.status === 'ready' && item.processedPreview);
+
+      if (anyReadyIndex >= 0) {
+        console.log(`[Queue] Found ready item at ${anyReadyIndex}, switching to it`);
+        setCurrentIndex(anyReadyIndex);
+        const readyItem = imageQueue[anyReadyIndex];
+        updateDisplayFromQueueItem(readyItem);
+        setShowConfirmation(true);
+        setIsProcessing(false);
+        setIsAnalyzing(false);
+      }
+    }
+  }, [imageQueue, isProcessing, showConfirmation, currentIndex]);
 
   // Analyze image for queue (returns metadata without updating state)
   const analyzeImageForQueue = async (imageFile: File | Blob): Promise<QueuedItem['metadata']> => {
@@ -913,14 +1190,13 @@ export default function UploadPage() {
     });
   };
 
-  const checkDuplicate = async (hash: string): Promise<{ duplicate: boolean; existingItem?: any }> => {
+  const checkDuplicate = async (hash: string): Promise<{ duplicate: boolean; existingItem?: any; hammingDistance?: number }> => {
     try {
       const response = await fetch('/api/check-duplicate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageHash: hash,
-          userId: 'default-user'
+          imageHash: hash
         })
       });
       return await response.json();
@@ -1206,7 +1482,6 @@ export default function UploadPage() {
           itemId: currentItem.itemId,
           imageUrl: currentItem.imageUrl,
           imageHash: currentItem.imageHash,
-          userId: 'default-user',
           category,
           subcategory: finalSubcategory || null,
           color: colors || null,
@@ -1234,23 +1509,24 @@ export default function UploadPage() {
       ));
 
       // Re-check duplicates for remaining items against newly saved item
+      // Only check against database (completed items), not batch items
       const savedHash = currentItem.imageHash;
       if (savedHash && currentIndex < imageQueue.length - 1) {
-        // Check remaining items for duplicates against what we just saved
         for (let i = currentIndex + 1; i < imageQueue.length; i++) {
           const item = imageQueue[i];
           if (item.imageHash && item.status === 'ready' && !item.isDuplicate) {
-            // Re-check this item for duplicates (will now find the just-saved item)
+            // Only check against database (completed items)
             const duplicateResult = await checkDuplicate(item.imageHash);
+
             if (duplicateResult.duplicate && duplicateResult.existingItem) {
               setImageQueue(prev => prev.map((q, idx) =>
                 idx === i ? {
                   ...q,
                   isDuplicate: true,
                   duplicateInfo: {
-                    subcategory: duplicateResult.existingItem.subcategory,
-                    color: duplicateResult.existingItem.color,
-                    brand: duplicateResult.existingItem.brand,
+                    subcategory: duplicateResult.existingItem?.subcategory,
+                    color: duplicateResult.existingItem?.color,
+                    brand: duplicateResult.existingItem?.brand,
                   }
                 } : q
               ));
@@ -1281,7 +1557,9 @@ export default function UploadPage() {
       <header className="border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-6 py-6">
           <div className="flex justify-between items-center">
-            <Logo size="sm" />
+            <Link href="/closet" className="hover:opacity-80 transition-opacity">
+              <Logo size="lg" />
+            </Link>
             <Link
               href="/closet"
               className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 hover:text-black transition-colors"
@@ -1345,11 +1623,11 @@ export default function UploadPage() {
             </div>
           )}
 
-          {selectedFile && !showConfirmation && (
+          {selectedFile && !showConfirmation && (isProcessing || isAnalyzing) && (
             <div className="relative">
               <img src={preview} alt="Selected" className="w-full border border-gray-200" />
               {(isAnalyzing || isProcessing) && (
-                <div className="absolute inset-0 bg-white flex items-center justify-center overflow-hidden">
+                <div className="absolute inset-0 bg-white flex items-start justify-center pt-32 overflow-hidden">
                   <style>{`
                     @keyframes pulse3d {
                       0%, 100% { transform: scale(0.85); opacity: 0.2; }
@@ -1365,83 +1643,85 @@ export default function UploadPage() {
                     }
                   `}</style>
 
-                  {/* 15 concentric circles with varied speed spinning arches */}
-                  <div className="relative flex items-center justify-center">
-                    {[
-                      { size: 200, speed: 1.2, reverse: false },
-                      { size: 186, speed: 4, reverse: true },
-                      { size: 172, speed: 2.5, reverse: false },
-                      { size: 158, speed: 0.8, reverse: true },
-                      { size: 144, speed: 3, reverse: false },
-                      { size: 130, speed: 1.5, reverse: true },
-                      { size: 116, speed: 5, reverse: false },
-                      { size: 102, speed: 2, reverse: true },
-                      { size: 88, speed: 0.6, reverse: false },
-                      { size: 74, speed: 3.5, reverse: true },
-                      { size: 60, speed: 1.8, reverse: false },
-                      { size: 46, speed: 4.5, reverse: true },
-                      { size: 32, speed: 2.2, reverse: false },
-                      { size: 18, speed: 1, reverse: true },
-                      { size: 8, speed: 3, reverse: false },
-                    ].map((ring, i) => (
-                      <div key={i}>
-                        <div
-                          className="absolute rounded-full border border-gray-200"
-                          style={{
-                            width: `${ring.size}px`,
-                            height: `${ring.size}px`,
-                            left: `${-ring.size/2}px`,
-                            top: `${-ring.size/2}px`,
-                            animation: `pulse3d 3s ease-in-out infinite`,
-                            animationDelay: `${-i * 0.2}s`,
-                          }}
-                        />
-                        <div
-                          className="absolute rounded-full border-2 border-transparent border-t-black"
-                          style={{
-                            width: `${ring.size}px`,
-                            height: `${ring.size}px`,
-                            left: `${-ring.size/2}px`,
-                            top: `${-ring.size/2}px`,
-                            animation: `${ring.reverse ? 'spinReverse' : 'spin'} ${ring.speed}s linear infinite`,
-                          }}
-                        />
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Status text with progress */}
-                  <div className="absolute bottom-6 text-center w-full px-4">
-                    {totalToProcess > 1 ? (
-                      <>
-                        <div className="text-black text-lg font-light mb-1">
-                          {processedCount}/{totalToProcess}
-                        </div>
-                        <div className="text-black/40 text-[10px] uppercase tracking-[0.4em] font-light">
-                          Completed
-                        </div>
-                        <div className="mt-3 w-40 h-1.5 bg-gray-200 rounded-full overflow-hidden mx-auto">
+                  <div className="flex flex-col items-center gap-32">
+                    {/* 15 concentric circles with varied speed spinning arches */}
+                    <div className="relative flex items-center justify-center">
+                      {[
+                        { size: 200, speed: 1.2, reverse: false },
+                        { size: 186, speed: 4, reverse: true },
+                        { size: 172, speed: 2.5, reverse: false },
+                        { size: 158, speed: 0.8, reverse: true },
+                        { size: 144, speed: 3, reverse: false },
+                        { size: 130, speed: 1.5, reverse: true },
+                        { size: 116, speed: 5, reverse: false },
+                        { size: 102, speed: 2, reverse: true },
+                        { size: 88, speed: 0.6, reverse: false },
+                        { size: 74, speed: 3.5, reverse: true },
+                        { size: 60, speed: 1.8, reverse: false },
+                        { size: 46, speed: 4.5, reverse: true },
+                        { size: 32, speed: 2.2, reverse: false },
+                        { size: 18, speed: 1, reverse: true },
+                        { size: 8, speed: 3, reverse: false },
+                      ].map((ring, i) => (
+                        <div key={i}>
                           <div
-                            className="h-full bg-black transition-all duration-300"
-                            style={{ width: `${(processedCount / totalToProcess) * 100}%` }}
+                            className="absolute rounded-full border border-gray-200"
+                            style={{
+                              width: `${ring.size}px`,
+                              height: `${ring.size}px`,
+                              left: `${-ring.size/2}px`,
+                              top: `${-ring.size/2}px`,
+                              animation: `pulse3d 3s ease-in-out infinite`,
+                              animationDelay: `${-i * 0.2}s`,
+                            }}
+                          />
+                          <div
+                            className="absolute rounded-full border-2 border-transparent border-t-black"
+                            style={{
+                              width: `${ring.size}px`,
+                              height: `${ring.size}px`,
+                              left: `${-ring.size/2}px`,
+                              top: `${-ring.size/2}px`,
+                              animation: `${ring.reverse ? 'spinReverse' : 'spin'} ${ring.speed}s linear infinite`,
+                            }}
                           />
                         </div>
-                        {/* Processing log */}
-                        {processingLog.length > 0 && (
-                          <div className="mt-4 max-h-24 overflow-y-auto">
-                            {processingLog.map((log, idx) => (
-                              <div key={idx} className="text-[9px] text-gray-400 font-mono">
-                                {log}
-                              </div>
-                            ))}
+                      ))}
+                    </div>
+
+                    {/* Status text with progress */}
+                    <div className="text-center w-full px-4">
+                      {totalToProcess > 1 ? (
+                        <>
+                          <div className="text-black text-lg font-light mb-1">
+                            {processedCount}/{totalToProcess}
                           </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="text-black/40 text-[10px] uppercase tracking-[0.4em] font-light">
-                        Analyzing
-                      </div>
-                    )}
+                          <div className="text-black/40 text-[10px] uppercase tracking-[0.4em] font-light">
+                            Completed
+                          </div>
+                          <div className="mt-3 w-40 h-1.5 bg-gray-200 rounded-full overflow-hidden mx-auto">
+                            <div
+                              className="h-full bg-black transition-all duration-300"
+                              style={{ width: `${(processedCount / totalToProcess) * 100}%` }}
+                            />
+                          </div>
+                          {/* Processing log */}
+                          {processingLog.length > 0 && (
+                            <div className="mt-4 max-h-24 overflow-y-auto">
+                              {processingLog.map((log, idx) => (
+                                <div key={idx} className="text-[9px] text-gray-400 font-mono">
+                                  {log}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-black/40 text-[10px] uppercase tracking-[0.4em] font-light">
+                          Analyzing
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1452,33 +1732,107 @@ export default function UploadPage() {
             <div className="space-y-8">
               {/* Top Action Buttons */}
               <div className="flex justify-between items-center">
-                <button
-                  onClick={() => {
-                    // Discard current item and move to next
-                    if (imageQueue.length > 1 && currentIndex < imageQueue.length - 1) {
-                      setImageQueue(prev => prev.filter((_, idx) => idx !== currentIndex));
-                      const nextItem = imageQueue[currentIndex + 1];
-                      if (nextItem) updateDisplayFromQueueItem(nextItem);
-                    } else if (imageQueue.length > 1 && currentIndex > 0) {
-                      // Last item but not first - go back
-                      setImageQueue(prev => prev.filter((_, idx) => idx !== currentIndex));
-                      setCurrentIndex(currentIndex - 1);
-                      const prevItem = imageQueue[currentIndex - 1];
-                      if (prevItem) updateDisplayFromQueueItem(prevItem);
-                    } else {
-                      // Only item - reset everything
-                      setImageQueue([]);
-                      setCurrentIndex(0);
-                      setSelectedFile(null);
-                      setPreview("");
-                      setProcessedPreview("");
-                      setShowConfirmation(false);
-                    }
-                  }}
-                  className="text-xs uppercase tracking-widest text-gray-400 hover:text-red-500 transition-colors"
-                >
-                  Discard
-                </button>
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => {
+                      console.log('[Discard] Current queue state:', {
+                        queueLength: imageQueue.length,
+                        currentIndex,
+                        currentItem: imageQueue[currentIndex]?.id,
+                      });
+
+                      // Remove current item from queue
+                      const newQueue = imageQueue.filter((_, idx) => idx !== currentIndex);
+
+                      if (newQueue.length === 0) {
+                        // No more items - reset everything
+                        setImageQueue([]);
+                        setCurrentIndex(0);
+                        setSelectedFile(null);
+                        setPreview("");
+                        setProcessedPreview("");
+                        setShowConfirmation(false);
+                        return;
+                      }
+
+                      // Find next READY item (prefer after current, then before)
+                      // Use Math.min to avoid looking beyond the new queue length
+                      const searchStartIdx = Math.min(currentIndex, newQueue.length - 1);
+                      let nextReadyIdx = newQueue.findIndex((item, idx) =>
+                        idx >= searchStartIdx && item.status === 'ready' && item.processedPreview
+                      );
+
+                      if (nextReadyIdx === -1) {
+                        // No ready item at/after current position, look from beginning
+                        nextReadyIdx = newQueue.findIndex(item =>
+                          item.status === 'ready' && item.processedPreview
+                        );
+                      }
+
+                      // If still nothing found, check for ready items without processedPreview (shouldn't happen but be safe)
+                      if (nextReadyIdx === -1) {
+                        nextReadyIdx = newQueue.findIndex(item => item.status === 'ready');
+                        if (nextReadyIdx >= 0) {
+                          console.log('[Discard] Found ready item without processedPreview:', newQueue[nextReadyIdx]);
+                        }
+                      }
+
+                      if (nextReadyIdx >= 0) {
+                        // Found a ready item - show it
+                        const readyItem = newQueue[nextReadyIdx];
+                        console.log('[Discard] Moving to ready item:', nextReadyIdx, readyItem?.id);
+                        setImageQueue(newQueue);
+                        setCurrentIndex(nextReadyIdx);
+                        updateDisplayFromQueueItem(readyItem);
+                        setShowConfirmation(true);
+                      } else {
+                        // No ready items - check what we have left
+                        const hasProcessing = newQueue.some(item =>
+                          item.status === 'processing' || item.status === 'pending'
+                        );
+
+                        if (hasProcessing) {
+                          // Still have items processing - show spinner
+                          const newIdx = Math.min(currentIndex, newQueue.length - 1);
+                          console.log('[Discard] Waiting for processing items, spinner at:', newIdx);
+                          setImageQueue(newQueue);
+                          setCurrentIndex(newIdx);
+                          setShowConfirmation(false);
+                          setIsProcessing(true);
+                          setIsAnalyzing(true);
+                        } else {
+                          // All items are either ready, error, or completed - nothing left to show
+                          console.log('[Discard] No processing items left, going to closet');
+                          setImageQueue([]);
+                          setSelectedFile(null);
+                          setPreview("");
+                          setProcessedPreview("");
+                          setShowConfirmation(false);
+                          window.location.href = "/closet";
+                        }
+                      }
+                    }}
+                    className="text-xs uppercase tracking-widest text-gray-400 hover:text-red-500 transition-colors"
+                  >
+                    Discard
+                  </button>
+                </div>
+
+                {/* Duplicate Warning - between Discard and Save */}
+                {imageQueue[currentIndex]?.isDuplicate && (
+                  <div className="bg-yellow-50 border border-yellow-200 px-3 py-2 rounded">
+                    <p className="text-xs text-yellow-800">
+                      <span className="font-medium">Duplicate?</span>{' '}
+                      {[
+                        imageQueue[currentIndex].duplicateInfo?.subcategory,
+                        imageQueue[currentIndex].duplicateInfo?.color,
+                        imageQueue[currentIndex].duplicateInfo?.brand
+                      ].filter(Boolean).join(', ') || 'Similar item'}{' '}
+                      exists
+                    </p>
+                  </div>
+                )}
+
                 <button
                   onClick={handleUpload}
                   disabled={
@@ -1498,24 +1852,9 @@ export default function UploadPage() {
                 </button>
               </div>
 
-              {/* Duplicate Warning */}
-              {imageQueue[currentIndex]?.isDuplicate && (
-                <div className="bg-yellow-50 border border-yellow-200 px-4 py-3 mb-4">
-                  <p className="text-xs text-yellow-800">
-                    <span className="font-medium">Possible duplicate:</span> You may already have{' '}
-                    {[
-                      imageQueue[currentIndex].duplicateInfo?.subcategory,
-                      imageQueue[currentIndex].duplicateInfo?.color,
-                      imageQueue[currentIndex].duplicateInfo?.brand
-                    ].filter(Boolean).join(', ') || 'this item'}{' '}
-                    in your closet.
-                  </p>
-                </div>
-              )}
-
               {/* Queue Progress Indicator */}
               {imageQueue.length > 1 && (
-                <div className="text-center mb-4">
+                <div className="text-center">
                   <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">
                     Item {currentIndex + 1} of {imageQueue.length}
                   </p>
@@ -1540,13 +1879,20 @@ export default function UploadPage() {
 
               {/* Image Preview */}
               <div className="flex flex-col items-center">
-                <div className="w-full max-w-sm overflow-hidden">
-                  <img
-                    src={processedPreview || preview}
-                    alt="Item preview"
-                    className="w-full border border-gray-200 transition-transform"
-                    style={{ transform: `rotate(${rotation}deg)` }}
-                  />
+                <div className="w-full max-w-sm flex justify-center items-center" style={{ minHeight: '400px' }}>
+                  {processedPreview ? (
+                    <img
+                      key={`${currentIndex}-${processedPreview}`}
+                      src={processedPreview}
+                      alt="Item preview"
+                      className="max-w-full border border-gray-200 transition-transform"
+                      style={{ transform: `rotate(${rotation}deg)` }}
+                    />
+                  ) : (
+                    <div className="text-center text-gray-400">
+                      <p className="text-sm">Loading processed image...</p>
+                    </div>
+                  )}
                 </div>
                 {/* Rotation Controls */}
                 <div className="flex justify-center gap-6 mt-4">
@@ -1567,13 +1913,6 @@ export default function UploadPage() {
                 </div>
               </div>
 
-              {aiMetadata?.description && (
-                <div className="border-t border-b border-gray-200 py-4">
-                  <p className="text-xs text-gray-400 text-center">
-                    <span className="font-medium">Description:</span> {aiMetadata.description}
-                  </p>
-                </div>
-              )}
 
               {/* Form Fields */}
               <div className="space-y-6">
@@ -1635,34 +1974,131 @@ export default function UploadPage() {
 
                   <div>
                     <label className="block text-xs uppercase tracking-wider text-gray-500 mb-2">Colors</label>
-                    {/* Color Palette Display */}
-                    {colorPalette.length > 0 && (
-                      <div className="mb-3">
-                        <div className="flex gap-2 flex-wrap">
-                          {colorPalette.slice(0, 8).map((color, idx) => {
-                            // Use RGB if available, otherwise fallback to name lookup
-                            const bgColor = color.rgb
-                              ? `rgb(${color.rgb[0]}, ${color.rgb[1]}, ${color.rgb[2]})`
-                              : colorNameToHex(color.name);
-                            return (
-                              <div key={idx} className="flex flex-col items-center">
-                                <div
-                                  className="w-10 h-10 rounded border border-gray-300 shadow-sm"
-                                  style={{ backgroundColor: bgColor }}
-                                  title={`${color.name}: ${color.percent}%`}
-                                />
-                                <span className="text-[9px] text-gray-400 mt-1">{color.percent}%</span>
-                              </div>
-                            );
-                          })}
+
+                    {/* Selected Colors Display */}
+                    <div className="mb-3 flex gap-2 flex-wrap min-h-[44px] items-center">
+                      {selectedColors.length > 0 ? (
+                        selectedColors.map((color, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 border border-gray-300 rounded-full text-sm"
+                          >
+                            <span>{color}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newColors = selectedColors.filter((_, i) => i !== idx);
+                                setSelectedColors(newColors);
+                                setColors(newColors.join(", "));
+                              }}
+                              className="text-gray-500 hover:text-red-500"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-sm text-gray-400">No colors selected</span>
+                      )}
+                    </div>
+
+                    {/* Color Dropdown */}
+                    <div className="relative" ref={colorDropdownRef}>
+                      <button
+                        type="button"
+                        onClick={() => setShowColorDropdown(!showColorDropdown)}
+                        className="w-full px-4 py-3 border border-gray-300 bg-white text-sm text-left focus:border-black focus:outline-none transition-colors flex justify-between items-center"
+                      >
+                        <span className="text-gray-500">Add color...</span>
+                        <span className="text-gray-400">{showColorDropdown ? '▲' : '▼'}</span>
+                      </button>
+
+                      {showColorDropdown && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 shadow-lg max-h-64 overflow-y-auto">
+                          {/* Common Colors */}
+                          <div className="p-2">
+                            <div className="grid grid-cols-3 gap-2">
+                              {commonColors.map((color) => (
+                                <button
+                                  key={color}
+                                  type="button"
+                                  onClick={() => {
+                                    if (!selectedColors.includes(color)) {
+                                      const newColors = [...selectedColors, color];
+                                      setSelectedColors(newColors);
+                                      setColors(newColors.join(", "));
+                                    }
+                                    setShowColorDropdown(false);
+                                  }}
+                                  className={`px-3 py-2 text-sm text-left border border-gray-200 hover:bg-gray-50 transition-colors ${
+                                    selectedColors.includes(color) ? 'bg-gray-100' : 'bg-white'
+                                  }`}
+                                >
+                                  {color}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Custom Color Input */}
+                          <div className="p-2 border-t border-gray-200">
+                            <input
+                              type="text"
+                              value={customColorInput}
+                              onChange={(e) => setCustomColorInput(e.target.value)}
+                              placeholder="Custom color..."
+                              className="w-full px-3 py-2 border border-gray-300 text-sm focus:border-black focus:outline-none"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && customColorInput.trim()) {
+                                  e.preventDefault();
+                                  const capitalizedColor = customColorInput.trim()
+                                    .split(' ')
+                                    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                                    .join(' ');
+                                  if (!selectedColors.includes(capitalizedColor)) {
+                                    const newColors = [...selectedColors, capitalizedColor];
+                                    setSelectedColors(newColors);
+                                    setColors(newColors.join(", "));
+                                  }
+                                  setCustomColorInput("");
+                                  setShowColorDropdown(false);
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (customColorInput.trim()) {
+                                  const capitalizedColor = customColorInput.trim()
+                                    .split(' ')
+                                    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                                    .join(' ');
+                                  if (!selectedColors.includes(capitalizedColor)) {
+                                    const newColors = [...selectedColors, capitalizedColor];
+                                    setSelectedColors(newColors);
+                                    setColors(newColors.join(", "));
+                                  }
+                                  setCustomColorInput("");
+                                  setShowColorDropdown(false);
+                                }
+                              }}
+                              className="w-full mt-2 px-3 py-2 bg-black text-white text-xs uppercase tracking-wider hover:bg-gray-800 transition-colors"
+                            >
+                              Add Custom
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    <input
-                      type="text"
-                      value={colors}
-                      onChange={(e) => setColors(e.target.value)}
-                      placeholder="e.g., black, white"
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs uppercase tracking-wider text-gray-500 mb-2">Description</label>
+                    <textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="e.g., plain crew neck tee, black leather boots"
+                      rows={2}
                       className="w-full px-4 py-3 border border-gray-300 bg-white text-sm focus:border-black focus:outline-none transition-colors"
                     />
                   </div>
@@ -1733,6 +2169,8 @@ export default function UploadPage() {
                       ? `Cancel upload of all ${itemCount} items?`
                       : 'Cancel this upload?';
                     if (confirm(message)) {
+                      // Set abort flag to stop any running uploads
+                      uploadAbortedRef.current = true;
                       setImageQueue([]);
                       setCurrentIndex(0);
                       setSelectedFile(null);

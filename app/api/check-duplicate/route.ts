@@ -1,10 +1,13 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { requireAuth } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
-    const { imageHash, userId } = await request.json();
+    const userId = await requireAuth();
 
-    if (!imageHash || !userId) {
+    const { imageHash } = await request.json();
+
+    if (!imageHash) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
@@ -37,13 +40,18 @@ export async function POST(request: Request) {
       return distance;
     }
 
-    // Get all hashes for this user to compare with Hamming distance
+    // Only check against COMPLETED (saved) items
+    // Processed items are still pending user confirmation and shouldn't trigger duplicates
     const allItems = await DB.prepare(
-      'SELECT id, subcategory, color, brand, image_hash FROM clothing_items WHERE user_id = ? AND image_hash IS NOT NULL'
-    ).bind(userId).all();
+      'SELECT id, subcategory, color, brand, image_hash FROM clothing_items WHERE user_id = ? AND image_hash IS NOT NULL AND status = ?'
+    ).bind(userId, 'completed').all();
 
-    // Find closest match within threshold (≤5 bits difference for 64-bit hash)
-    const HAMMING_THRESHOLD = 5;
+    console.log('[check-duplicate] Found', allItems.results?.length || 0, 'items with hashes for user', userId);
+    console.log('[check-duplicate] Checking hash:', imageHash);
+
+    // Find closest match within threshold (≤10 bits difference for 64-bit hash)
+    // More aggressive threshold to catch similar uploads
+    const HAMMING_THRESHOLD = 10;
     let closestMatch = null;
     let closestDistance = Infinity;
 
@@ -59,6 +67,7 @@ export async function POST(request: Request) {
     }
 
     if (closestMatch) {
+      console.log('[check-duplicate] DUPLICATE FOUND - distance:', closestDistance, 'item:', closestMatch.id);
       return new Response(
         JSON.stringify({
           duplicate: true,
@@ -77,6 +86,7 @@ export async function POST(request: Request) {
       );
     }
 
+    console.log('[check-duplicate] No duplicate found');
     return new Response(
       JSON.stringify({
         duplicate: false,

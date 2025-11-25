@@ -1,13 +1,15 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { requireAuth } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
+    const userId = await requireAuth();
+
     const body = await request.json();
     const {
       itemId,
       imageUrl,
       imageHash,
-      userId = 'default-user',
       category,
       subcategory,
       color,
@@ -32,9 +34,10 @@ export async function POST(request: Request) {
 
     const { env } = await getCloudflareContext();
     const DB = env.DB;
+    const R2 = env.CLOSET_IMAGES;
 
-    if (!DB) {
-      return new Response(JSON.stringify({ error: 'Database not available' }), {
+    if (!DB || !R2) {
+      return new Response(JSON.stringify({ error: 'Database or storage not available' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -42,18 +45,74 @@ export async function POST(request: Request) {
 
     const timestamp = Date.now();
 
+    // Extract the R2 key from imageUrl
+    const currentKey = imageUrl.replace('/api/images/', '');
+
+    // Check if image is in pending/ folder (new flow) or already in items/ folder (old items)
+    const isPending = currentKey.startsWith('pending/');
+    let finalKey = currentKey;
+    let finalImageUrl = imageUrl;
+
+    if (isPending) {
+      // New flow: Move from pending/ to items/
+      finalKey = currentKey.replace('pending/', 'items/');
+      finalImageUrl = `/api/images/${finalKey}`;
+
+      console.log(`[save-item] Moving image from ${currentKey} to ${finalKey}`);
+
+      try {
+        // Copy from pending to items
+        const pendingImage = await R2.get(currentKey);
+        if (!pendingImage) {
+          throw new Error(`Image not found at ${currentKey}`);
+        }
+
+        await R2.put(finalKey, pendingImage.body, {
+          httpMetadata: { contentType: 'image/webp' },
+        });
+
+        // Delete from pending
+        await R2.delete(currentKey);
+        console.log(`[save-item] Successfully moved image to ${finalKey}`);
+      } catch (r2Error) {
+        console.error('[save-item] R2 move error:', r2Error);
+        return new Response(JSON.stringify({
+          error: 'Failed to move image to final location',
+          details: r2Error instanceof Error ? r2Error.message : 'Unknown error'
+        }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    } else {
+      // Old items already in items/ folder - no need to move, just update DB
+      console.log(`[save-item] Image already in final location: ${currentKey}`);
+    }
+
     await DB.prepare(
-      `INSERT INTO clothing_items (
-        id, user_id, category, subcategory, color, brand, size,
-        description, notes,
-        original_image_url, thumbnail_url, background_removed_url,
-        image_hash, ai_raw_response,
-        cost, date_purchased, store_purchased_from,
-        favorite, times_worn, rotation, original_filename, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `UPDATE clothing_items SET
+        user_id = ?,
+        original_image_url = ?,
+        thumbnail_url = ?,
+        category = ?,
+        subcategory = ?,
+        color = ?,
+        brand = ?,
+        size = ?,
+        description = ?,
+        notes = ?,
+        cost = ?,
+        date_purchased = ?,
+        store_purchased_from = ?,
+        rotation = ?,
+        original_filename = ?,
+        status = 'completed',
+        updated_at = ?
+      WHERE id = ?`
     ).bind(
-      itemId,
       userId,
+      finalImageUrl,
+      finalImageUrl,
       category,
       subcategory || null,
       color || null,
@@ -61,20 +120,13 @@ export async function POST(request: Request) {
       size || null,
       description || null,
       notes || null,
-      imageUrl,
-      imageUrl,
-      imageUrl,
-      imageHash || null,
-      aiMetadata ? JSON.stringify(aiMetadata) : null,
       cost || null,
       datePurchased || null,
       storePurchasedFrom || null,
-      0,
-      0,
       rotation || 0,
       originalFilename || null,
       timestamp,
-      timestamp
+      itemId
     ).run();
 
     return new Response(JSON.stringify({

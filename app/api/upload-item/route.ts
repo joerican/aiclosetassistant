@@ -1,12 +1,14 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { requireAuth } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
+    const userId = await requireAuth();
+
     const formData = await request.formData();
     // Receive cropped WebP image from client
     const processedImage = formData.get('processedImage') as Blob | null;
     const category = formData.get('category') as string;
-    const userId = formData.get('userId') as string || 'default-user';
 
     // Get itemId from process-item (or generate new one)
     const providedItemId = formData.get('itemId') as string | null;

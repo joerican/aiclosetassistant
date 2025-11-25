@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ClerkProvider } from '@clerk/nextjs';
 import "./globals.css";
 import VersionBadge from "./components/VersionBadge";
 
@@ -13,11 +14,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body>
-        {children}
-        <VersionBadge />
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en">
+        <body>
+          {children}
+          <VersionBadge />
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

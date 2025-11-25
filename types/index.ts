@@ -19,7 +19,7 @@ export interface ClothingItem {
   size?: string;
   description?: string;
   notes?: string;
-  season?: Season;
+  season?: string;
   original_image_url: string;
   thumbnail_url: string;
   background_removed_url?: string;
@@ -32,6 +32,11 @@ export interface ClothingItem {
   store_purchased_from?: string;
   rotation?: number;
   original_filename?: string;
+  // AI-detected metadata for outfit matching
+  fit?: string;
+  style?: string;
+  material?: string;
+  boldness?: string;
   created_at: number;
   updated_at: number;
 }

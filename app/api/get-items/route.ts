@@ -1,10 +1,11 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { requireAuth } from '@/lib/auth';
 
 export async function GET(request: Request) {
   try {
+    const userId = await requireAuth();
     const { searchParams } = new URL(request.url);
     const category = searchParams.get('category');
-    const userId = searchParams.get('userId') || 'default-user'; // TODO: Replace with actual auth
 
     // Get D1 binding from Cloudflare context
     const { env } = await getCloudflareContext();
@@ -17,9 +18,9 @@ export async function GET(request: Request) {
       });
     }
 
-    // Build query based on category filter
-    let query = 'SELECT * FROM clothing_items WHERE user_id = ?';
-    const params = [userId];
+    // Build query based on category filter - only show completed items
+    let query = 'SELECT * FROM clothing_items WHERE user_id = ? AND status = ?';
+    const params = [userId, 'completed'];
 
     if (category && category !== 'all') {
       query += ' AND category = ?';
@@ -55,6 +56,11 @@ export async function GET(request: Request) {
       store_purchased_from: item.store_purchased_from,
       rotation: item.rotation || 0,
       original_filename: item.original_filename,
+      // AI-detected metadata
+      fit: item.fit,
+      style: item.style,
+      material: item.material,
+      boldness: item.boldness,
       created_at: item.created_at,
       updated_at: item.updated_at,
     }));

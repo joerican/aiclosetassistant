@@ -12,6 +12,7 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "dependencies": {
+    "@clerk/nextjs": "^6.35.4",
     "@imgly/background-removal": "^1.7.0",
     "@lucide/lab": "^0.1.2",
     "fast-png": "^7.0.1",

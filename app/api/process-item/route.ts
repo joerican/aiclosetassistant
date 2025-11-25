@@ -1,11 +1,13 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { requireAuth } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
+    const userId = await requireAuth();
+
     const formData = await request.formData();
     const image = formData.get('image') as File;
     const imageHash = formData.get('imageHash') as string;
-    const userId = formData.get('userId') as string || 'default-user';
 
     if (!image) {
       return new Response(JSON.stringify({ error: 'No image provided' }), {

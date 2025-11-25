@@ -1,11 +1,13 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { requireAuth } from '@/lib/auth';
 
 export async function PUT(request: Request) {
   try {
+    const userId = await requireAuth();
+
     const body = await request.json();
     const {
       itemId,
-      userId,
       category,
       subcategory,
       color,
@@ -17,7 +19,7 @@ export async function PUT(request: Request) {
       rotation
     } = body;
 
-    if (!itemId || !userId) {
+    if (!itemId) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },

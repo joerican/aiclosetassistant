@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useClerk } from "@clerk/nextjs";
 import { Category, ClothingItem } from "@/types";
 import {
   Shirt,
@@ -22,7 +23,12 @@ import {
   Info,
   Sparkles,
   RotateCcw,
-  RotateCw
+  RotateCw,
+  Dices,
+  Heart,
+  User,
+  LogOut,
+  Settings
 } from "lucide-react";
 import { trousers, coatHanger } from "@lucide/lab";
 import Logo from "../components/Logo";
@@ -32,6 +38,7 @@ const TrousersIcon = (props: any) => <Icon iconNode={trousers} {...props} />;
 const CoatHangerIcon = (props: any) => <Icon iconNode={coatHanger} {...props} />;
 
 export default function ClosetPage() {
+  const { signOut } = useClerk();
   const [selectedCategory, setSelectedCategory] = useState<Category | "all">("all");
   const [items, setItems] = useState<ClothingItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -40,6 +47,7 @@ export default function ClosetPage() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showItemDetails, setShowItemDetails] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
 
   // Edit form states
   const [editCategory, setEditCategory] = useState<Category>("tops");
@@ -82,7 +90,8 @@ export default function ClosetPage() {
 
   // Helper to build image URL with rotation param
   const getImageUrl = (item: ClothingItem, width?: number) => {
-    const baseUrl = item.background_removed_url || item.thumbnail_url || item.original_image_url;
+    // Use original_image_url (processed WebP with transparent background)
+    const baseUrl = item.original_image_url || item.thumbnail_url;
     if (!baseUrl) return '';
 
     const params = new URLSearchParams();
@@ -99,7 +108,7 @@ export default function ClosetPage() {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch(`/api/get-items?category=${selectedCategory}&userId=default-user`);
+        const response = await fetch(`/api/get-items?category=${selectedCategory}`);
 
         if (!response.ok) {
           throw new Error('Failed to fetch items');
@@ -143,7 +152,6 @@ export default function ClosetPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: selectedItem.id,
-          userId: 'default-user',
           category: editCategory,
           subcategory: editSubcategory || null,
           color: editColor || null,
@@ -200,15 +208,24 @@ export default function ClosetPage() {
   };
 
   const handleDeleteItem = async (itemId: string) => {
+    console.log('[handleDeleteItem] Called with itemId:', itemId);
+
     // Confirm deletion
-    if (!confirm('Are you sure you want to delete this item? This action cannot be undone.')) {
+    const confirmed = confirm('Are you sure you want to delete this item? This action cannot be undone.');
+    console.log('[handleDeleteItem] User confirmed:', confirmed);
+
+    if (!confirmed) {
+      console.log('[handleDeleteItem] User cancelled deletion');
       return;
     }
 
     try {
-      const response = await fetch(`/api/delete-item?itemId=${itemId}&userId=default-user`, {
+      console.log('[handleDeleteItem] Making DELETE request to /api/delete-item');
+      const response = await fetch(`/api/delete-item?itemId=${itemId}`, {
         method: 'DELETE',
       });
+
+      console.log('[handleDeleteItem] Response status:', response.status);
 
       if (!response.ok) {
         throw new Error('Failed to delete item');
@@ -221,6 +238,8 @@ export default function ClosetPage() {
       if (selectedItem?.id === itemId) {
         setSelectedItem(null);
       }
+
+      console.log('[handleDeleteItem] Item deleted successfully');
     } catch (err) {
       console.error('Error deleting item:', err);
       alert('Failed to delete item. Please try again.');
@@ -249,7 +268,7 @@ export default function ClosetPage() {
         const batch = items.slice(i, i + BATCH_SIZE);
         await Promise.all(
           batch.map(item =>
-            fetch(`/api/delete-item?itemId=${item.id}&userId=default-user`, {
+            fetch(`/api/delete-item?itemId=${item.id}`, {
               method: 'DELETE',
             })
           )
@@ -265,30 +284,128 @@ export default function ClosetPage() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      window.location.href = '/';
+    } catch (err) {
+      console.error('Error logging out:', err);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
       <header className="border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-6">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 sm:py-6">
           <div className="flex justify-between items-center">
-            {/* Hamburger Menu Button */}
-            <button
-              onClick={() => setIsMenuOpen(true)}
-              className="p-2 hover:bg-gray-100 transition-colors"
-            >
-              <Menu size={24} strokeWidth={1.5} />
-            </button>
+            {/* Left side: Hamburger + Logo (mobile) */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setIsMenuOpen(true)}
+                className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Menu className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={1.5} />
+              </button>
 
-            {/* Logo - 2x bigger (using lg size) */}
-            <Logo size="lg" />
+              {/* Logo - left aligned on mobile, center on desktop */}
+              <div className="block sm:hidden scale-75">
+                <Logo size="lg" />
+              </div>
+            </div>
 
-            {/* Add Button */}
-            <Link
-              href="/upload"
-              className="p-2 hover:bg-gray-100 transition-colors"
-            >
-              <Plus size={24} strokeWidth={1.5} />
-            </Link>
+            {/* Logo - centered on desktop only */}
+            <div className="hidden sm:block absolute left-1/2 -translate-x-1/2">
+              <Logo size="lg" />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-0.5 sm:gap-1">
+              {/* Add Button */}
+              <Link
+                href="/upload"
+                className="p-1.5 sm:p-2 hover:bg-gray-100 transition-colors"
+              >
+                <Plus className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={1.5} />
+              </Link>
+
+              {/* Shuffle Button */}
+              <Link
+                href="/shuffle"
+                className="p-1.5 sm:p-2 hover:bg-gray-100 transition-colors"
+              >
+                <Dices className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={1.5} />
+              </Link>
+
+              {/* Saved Outfits Button */}
+              <Link
+                href="/outfits"
+                className="p-1.5 sm:p-2 hover:bg-gray-100 transition-colors"
+              >
+                <Heart className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={1.5} />
+              </Link>
+
+              {/* Account Menu Button */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowAccountMenu(!showAccountMenu)}
+                  className="p-1.5 sm:p-2 hover:bg-gray-100 transition-colors"
+                >
+                  <User className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={1.5} />
+                </button>
+
+                {/* Account Menu Dropdown */}
+                {showAccountMenu && (
+                  <>
+                    {/* Backdrop */}
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowAccountMenu(false)}
+                    />
+
+                    {/* Menu Panel */}
+                    <div className="absolute right-0 mt-2 w-56 bg-white shadow-lg border border-gray-200 z-50">
+                      <div className="py-2">
+                        {/* Account Settings */}
+                        <button
+                          onClick={() => {
+                            setShowAccountMenu(false);
+                            // TODO: Navigate to account settings page
+                            alert('Account settings coming soon!');
+                          }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50 transition-colors"
+                        >
+                          <Settings size={18} strokeWidth={1.5} />
+                          <span>Account Settings</span>
+                        </button>
+
+                        {/* Debug Logs */}
+                        <Link
+                          href="/logs"
+                          onClick={() => setShowAccountMenu(false)}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50 transition-colors"
+                        >
+                          <span className="text-lg">🐛</span>
+                          <span>Debug Logs</span>
+                        </Link>
+
+                        {/* Logout */}
+                        <button
+                          onClick={() => {
+                            setShowAccountMenu(false);
+                            handleLogout();
+                          }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50 transition-colors text-red-600"
+                        >
+                          <LogOut size={18} strokeWidth={1.5} />
+                          <span>Log Out</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </header>
@@ -403,23 +520,23 @@ export default function ClosetPage() {
                         <IconComponent size={18} strokeWidth={1.5} />
                         {categoryLabels[cat]}
                       </h3>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                      <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">
                         {categoryItems.map((item) => (
                           <div
                             key={item.id}
                             onClick={() => handleItemClick(item)}
                             className="group cursor-pointer"
                           >
-                            <div className="aspect-square relative bg-gray-50 mb-3 overflow-hidden">
+                            <div className="aspect-square relative bg-gray-50 mb-1.5 sm:mb-3 overflow-hidden">
                               <img
                                 src={getImageUrl(item, 200)}
                                 alt={`${item.category} item`}
                                 className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                               />
                               {item.favorite && (
-                                <div className="absolute top-2 right-2">
+                                <div className="absolute top-1 right-1 sm:top-2 sm:right-2">
                                   <Star
-                                    size={16}
+                                    className="w-3 h-3 sm:w-4 sm:h-4"
                                     fill="black"
                                     stroke="black"
                                     strokeWidth={1.5}
@@ -427,15 +544,15 @@ export default function ClosetPage() {
                                 </div>
                               )}
                             </div>
-                            <div>
-                              <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
+                            <div className="space-y-0.5 sm:space-y-1">
+                              <p className="text-[10px] sm:text-xs uppercase tracking-wider text-gray-500 truncate">
                                 {item.subcategory || item.category}
                               </p>
                               {item.brand && (
-                                <p className="text-sm truncate">{item.brand}</p>
+                                <p className="text-xs sm:text-sm truncate">{item.brand}</p>
                               )}
                               {item.color && (
-                                <p className="text-xs text-gray-400 truncate">{item.color}</p>
+                                <p className="text-[10px] sm:text-xs text-gray-400 truncate">{item.color}</p>
                               )}
                             </div>
                           </div>
@@ -447,7 +564,7 @@ export default function ClosetPage() {
               </div>
             ) : (
               // Single category view
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">
                 {items
                   .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
                   .map((item) => (
@@ -456,16 +573,16 @@ export default function ClosetPage() {
                     onClick={() => handleItemClick(item)}
                     className="group cursor-pointer"
                   >
-                    <div className="aspect-square relative bg-gray-50 mb-3 overflow-hidden">
+                    <div className="aspect-square relative bg-gray-50 mb-1.5 sm:mb-3 overflow-hidden">
                       <img
                         src={getImageUrl(item, 200)}
                         alt={`${item.category} item`}
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                       />
                       {item.favorite && (
-                        <div className="absolute top-2 right-2">
+                        <div className="absolute top-1 right-1 sm:top-2 sm:right-2">
                           <Star
-                            size={16}
+                            className="w-3 h-3 sm:w-4 sm:h-4"
                             fill="black"
                             stroke="black"
                             strokeWidth={1.5}
@@ -473,15 +590,15 @@ export default function ClosetPage() {
                         </div>
                       )}
                     </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
+                    <div className="space-y-0.5 sm:space-y-1">
+                      <p className="text-[10px] sm:text-xs uppercase tracking-wider text-gray-500 truncate">
                         {item.subcategory || item.category}
                       </p>
                       {item.brand && (
-                        <p className="text-sm truncate">{item.brand}</p>
+                        <p className="text-xs sm:text-sm truncate">{item.brand}</p>
                       )}
                       {item.color && (
-                        <p className="text-xs text-gray-400 truncate">{item.color}</p>
+                        <p className="text-[10px] sm:text-xs text-gray-400 truncate">{item.color}</p>
                       )}
                     </div>
                   </div>
@@ -541,7 +658,6 @@ export default function ClosetPage() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                           itemId: selectedItem.id,
-                          userId: 'default-user',
                           category: selectedItem.category,
                           subcategory: selectedItem.subcategory,
                           color: selectedItem.color,
@@ -574,7 +690,6 @@ export default function ClosetPage() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                           itemId: selectedItem.id,
-                          userId: 'default-user',
                           category: selectedItem.category,
                           subcategory: selectedItem.subcategory,
                           color: selectedItem.color,
@@ -699,6 +814,41 @@ export default function ClosetPage() {
                       </div>
                     )}
 
+                    {selectedItem.fit && (
+                      <div>
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Fit</label>
+                        <p className="text-sm capitalize">{selectedItem.fit}</p>
+                      </div>
+                    )}
+
+                    {selectedItem.style && (
+                      <div>
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Style</label>
+                        <p className="text-sm capitalize">{selectedItem.style}</p>
+                      </div>
+                    )}
+
+                    {selectedItem.season && (
+                      <div>
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Season</label>
+                        <p className="text-sm capitalize">{selectedItem.season}</p>
+                      </div>
+                    )}
+
+                    {selectedItem.material && (
+                      <div>
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Material</label>
+                        <p className="text-sm capitalize">{selectedItem.material}</p>
+                      </div>
+                    )}
+
+                    {selectedItem.boldness && (
+                      <div>
+                        <label className="text-xs uppercase tracking-wider text-gray-400">Boldness</label>
+                        <p className="text-sm capitalize">{selectedItem.boldness}</p>
+                      </div>
+                    )}
+
                     {selectedItem.cost && (
                       <div>
                         <label className="text-xs uppercase tracking-wider text-gray-400">Cost</label>
@@ -750,6 +900,28 @@ export default function ClosetPage() {
                       </p>
                     </div>
                   </div>
+
+                  {/* Description */}
+                  {selectedItem.description && (
+                    <div className="pt-4 border-t border-gray-100">
+                      <label className="text-xs uppercase tracking-wider text-gray-400">Description</label>
+                      <p className="text-sm">{selectedItem.description}</p>
+                    </div>
+                  )}
+
+                  {/* Tags */}
+                  {selectedItem.tags && selectedItem.tags.length > 0 && (
+                    <div className="pt-4 border-t border-gray-100">
+                      <label className="text-xs uppercase tracking-wider text-gray-400">Tags</label>
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {selectedItem.tags.map((tag, index) => (
+                          <span key={index} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="pt-4 border-t border-gray-100">
                     <label className="text-xs uppercase tracking-wider text-gray-400">Added</label>

@@ -1,10 +1,12 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { requireAuth } from '@/lib/auth';
 
 export async function DELETE(request: Request) {
   try {
+    const userId = await requireAuth();
+
     const { searchParams } = new URL(request.url);
     const itemId = searchParams.get('itemId');
-    const userId = searchParams.get('userId') || 'default-user'; // TODO: Replace with actual auth
 
     if (!itemId) {
       return new Response(JSON.stringify({ error: 'Missing itemId' }), {

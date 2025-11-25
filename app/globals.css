@@ -75,6 +75,12 @@
 
 /* No dark mode - luxury brands typically maintain consistent light aesthetic */
 
+/* Prevent horizontal overflow on mobile */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
 body {
   color: var(--text-primary);
   background: var(--bg-primary);
@@ -83,6 +89,11 @@ body {
   letter-spacing: var(--tracking-wide);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ensure all containers respect viewport width */
+* {
+  box-sizing: border-box;
 }
 
 /* Luxury typography defaults */
