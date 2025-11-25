@@ -1,0 +1,39 @@
+name = "image-processor"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+account_id = "73d8f7df9a58eb64c1cc943d0c76d474"
+
+[[queues.consumers]]
+queue = "image-processing"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+max_concurrency = 10
+dead_letter_queue = "image-processing-dlq"
+
+# Run cleanup every hour to remove orphaned pending files older than 4 hours
+[triggers]
+crons = ["0 * * * *"]
+
+[observability.logs]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "closet-db"
+database_id = "6b5601ee-c870-422c-8818-2d4420f1c6f3"
+
+[[r2_buckets]]
+binding = "CLOSET_IMAGES"
+bucket_name = "closet-images"
+
+[[services]]
+binding = "IMAGE_TRIM"
+service = "image-trim"
+
+[ai]
+binding = "AI"
+
+[images]
+binding = "IMAGES"

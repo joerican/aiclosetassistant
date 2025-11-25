@@ -4,6 +4,7 @@
   "compatibility_date": "2024-12-30",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "account_id": "73d8f7df9a58eb64c1cc943d0c76d474",
+  "workers_dev": true,
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
@@ -36,6 +37,14 @@
   },
   "images": {
     "binding": "IMAGES"
+  },
+  "queues": {
+    "producers": [
+      {
+        "queue": "image-processing",
+        "binding": "IMAGE_QUEUE"
+      }
+    ]
   },
   "observability": {
     "logs": {
