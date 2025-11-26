@@ -184,22 +184,28 @@ struct UploadView: View {
                     if viewModel.selectedImage != nil {
                         Divider()
 
-                        // Detected Colors Display
-                        if !viewModel.colors.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Detected Colors")
-                                    .font(.headline)
+                        // Detected Colors Display with Add button
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Colors")
+                                .font(.headline)
 
-                                FlowLayout(spacing: 8) {
-                                    ForEach(viewModel.colors, id: \.self) { color in
-                                        ColorChip(colorName: color, onRemove: {
-                                            viewModel.colors.removeAll { $0 == color }
-                                        })
+                            FlowLayout(spacing: 8) {
+                                ForEach(viewModel.colors, id: \.self) { color in
+                                    ColorChip(colorName: color, onRemove: {
+                                        viewModel.colors.removeAll { $0 == color }
+                                    })
+                                }
+
+                                // Add color button
+                                AddColorButton { newColor in
+                                    let trimmed = newColor.trimmingCharacters(in: .whitespaces).capitalized
+                                    if !trimmed.isEmpty && !viewModel.colors.contains(trimmed) {
+                                        viewModel.colors.append(trimmed)
                                     }
                                 }
                             }
-                            .padding(.horizontal)
                         }
+                        .padding(.horizontal)
 
                         // Required fields
                         VStack(alignment: .leading, spacing: 16) {
@@ -729,6 +735,72 @@ private struct ColorChip: View {
             Capsule()
                 .stroke(Color.gray.opacity(0.3), lineWidth: colorName.lowercased() == "white" ? 1 : 0)
         )
+    }
+}
+
+// MARK: - Add Color Button
+
+private struct AddColorButton: View {
+    let onAdd: (String) -> Void
+    @State private var isEditing = false
+    @State private var newColor = ""
+
+    var body: some View {
+        if isEditing {
+            HStack(spacing: 4) {
+                TextField("Color", text: $newColor)
+                    .textFieldStyle(.plain)
+                    .font(.caption)
+                    .frame(width: 60)
+                    .textInputAutocapitalization(.words)
+                    .onSubmit {
+                        onAdd(newColor)
+                        newColor = ""
+                        isEditing = false
+                    }
+
+                Button {
+                    onAdd(newColor)
+                    newColor = ""
+                    isEditing = false
+                } label: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    newColor = ""
+                    isEditing = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.gray.opacity(0.2))
+            .clipShape(Capsule())
+        } else {
+            Button {
+                isEditing = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus")
+                        .font(.caption)
+                    Text("Add")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.accentColor.opacity(0.2))
+                .foregroundStyle(.accentColor)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 
