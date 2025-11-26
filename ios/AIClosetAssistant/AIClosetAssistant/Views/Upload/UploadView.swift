@@ -42,7 +42,7 @@ struct UploadView: View {
 
     // Services
     private let imageProcessor = ImageProcessingService.shared
-    private let aiAnalysis = LocalAIAnalysisService()
+    private let aiAnalysis = CloudAIAnalysisService()  // Use cloud AI for better accuracy
 
     // Display image (prefer processed, fall back to selected)
     private var displayImage: UIImage? {
@@ -410,7 +410,7 @@ struct UploadView: View {
 
     private func runAIAnalysis(on image: UIImage) async {
         await MainActor.run {
-            processingStatus = "Analyzing colors and patterns..."
+            processingStatus = "Analyzing with AI..."
             isProcessing = true
         }
 
@@ -419,12 +419,18 @@ struct UploadView: View {
 
             await MainActor.run {
                 // Populate form with AI results
+                // Set category from AI if it's valid
+                if let detectedCategory = ClothingItem.Category(rawValue: analysis.category) {
+                    category = detectedCategory
+                }
+                subcategory = analysis.subcategory ?? ""
                 colors = analysis.colors
                 pattern = analysis.pattern ?? ""
                 style = analysis.style ?? ""
                 formality = analysis.formality ?? ""
                 seasons = analysis.season
                 tags = analysis.tags
+                brand = analysis.brand ?? ""
                 analysisComplete = true
                 isProcessing = false
                 processingStatus = ""
@@ -435,7 +441,8 @@ struct UploadView: View {
                 isProcessing = false
                 processingStatus = ""
             }
-            // Don't show error - analysis is optional
+            // Show error for cloud analysis since it's expected to work
+            errorHandler.handle(error, context: "AI analysis")
             print("AI analysis failed: \(error.localizedDescription)")
         }
     }

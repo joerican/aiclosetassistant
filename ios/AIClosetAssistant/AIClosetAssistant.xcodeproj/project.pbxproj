@@ -28,6 +28,7 @@
 		A1000004201D0003 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004101D0003 /* AuthService.swift */; };
 		A1000004201D0004 /* AIAnalysisProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004101D0004 /* AIAnalysisProtocol.swift */; };
 		A1000004201D0005 /* LocalAIAnalysisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004101D0005 /* LocalAIAnalysisService.swift */; };
+		A1000004201D0006 /* CloudAIAnalysisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004101D0006 /* CloudAIAnalysisService.swift */; };
 		A1000005201D0001 /* ImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000005101D0001 /* ImageCache.swift */; };
 		A1000005201D0002 /* ErrorHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000005101D0002 /* ErrorHandler.swift */; };
 		A1000005201D0003 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000005101D0003 /* KeychainHelper.swift */; };
@@ -59,6 +60,7 @@
 		A1000004101D0003 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		A1000004101D0004 /* AIAnalysisProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAnalysisProtocol.swift; sourceTree = "<group>"; };
 		A1000004101D0005 /* LocalAIAnalysisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAIAnalysisService.swift; sourceTree = "<group>"; };
+		A1000004101D0006 /* CloudAIAnalysisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudAIAnalysisService.swift; sourceTree = "<group>"; };
 		A1000005101D0001 /* ImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCache.swift; sourceTree = "<group>"; };
 		A1000005101D0002 /* ErrorHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorHandler.swift; sourceTree = "<group>"; };
 		A1000005101D0003 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
@@ -228,6 +230,7 @@
 			children = (
 				A1000004101D0004 /* AIAnalysisProtocol.swift */,
 				A1000004101D0005 /* LocalAIAnalysisService.swift */,
+				A1000004101D0006 /* CloudAIAnalysisService.swift */,
 			);
 			path = Analysis;
 			sourceTree = "<group>";
@@ -330,6 +333,7 @@
 				A1000004201D0003 /* AuthService.swift in Sources */,
 				A1000004201D0004 /* AIAnalysisProtocol.swift in Sources */,
 				A1000004201D0005 /* LocalAIAnalysisService.swift in Sources */,
+				A1000004201D0006 /* CloudAIAnalysisService.swift in Sources */,
 				A1000005201D0001 /* ImageCache.swift in Sources */,
 				A1000005201D0002 /* ErrorHandler.swift in Sources */,
 				A1000005201D0003 /* KeychainHelper.swift in Sources */,
@@ -469,7 +473,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = P8GX435G5U;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -508,7 +512,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = P8GX435G5U;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
