@@ -5,6 +5,7 @@ struct CanvasView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.colorScheme) private var colorScheme
     @Query private var items: [ClothingItem]
 
     @State private var canvasItems: [CanvasItemState] = []
@@ -19,39 +20,64 @@ struct CanvasView: View {
 
     var body: some View {
         NavigationStack {
-            GeometryReader { geometry in
-                HStack(spacing: 0) {
-                    // Canvas area
-                    ZStack {
-                        // Background
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(.gray.opacity(0.1))
+            VStack(spacing: 0) {
+                if sizeClass == .regular {
+                    // iPad layout - horizontal split
+                    GeometryReader { geometry in
+                        HStack(spacing: 0) {
+                            canvasArea
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .padding()
 
-                        // Draggable items
-                        ForEach($canvasItems) { $item in
-                            CanvasItemView(
-                                state: $item,
-                                onDelete: { removeItem(item) }
-                            )
-                        }
-
-                        if canvasItems.isEmpty {
-                            VStack(spacing: 12) {
-                                Image(systemName: "hand.draw")
-                                    .font(.system(size: 48))
-                                    .foregroundStyle(.secondary)
-                                Text("Drag items here")
-                                    .foregroundStyle(.secondary)
-                            }
+                            itemPickerSidebar
+                                .frame(width: 250)
                         }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding()
+                } else {
+                    // iPhone layout - canvas on top, scrollable item picker below
+                    VStack(spacing: 0) {
+                        // Canvas area (fixed height, scrollable)
+                        ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                            canvasArea
+                                .frame(width: 400, height: 400)
+                        }
+                        .frame(height: 350)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 8)
 
-                    // Item picker sidebar (iPad) or bottom sheet (iPhone)
-                    if sizeClass == .regular {
-                        itemPickerSidebar
-                            .frame(width: 250)
+                        Divider()
+                            .padding(.vertical, 8)
+
+                        // Category filter
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                CategoryChip(title: "All", isSelected: selectedCategory == nil) {
+                                    selectedCategory = nil
+                                }
+                                ForEach(ClothingItem.Category.allCases) { cat in
+                                    CategoryChip(title: cat.displayName, isSelected: selectedCategory == cat) {
+                                        selectedCategory = cat
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+
+                        // Scrollable item grid
+                        ScrollView {
+                            LazyVGrid(columns: [
+                                GridItem(.flexible()),
+                                GridItem(.flexible()),
+                                GridItem(.flexible())
+                            ], spacing: 8) {
+                                ForEach(filteredItems) { item in
+                                    ItemPickerThumbnail(item: item, size: 90) {
+                                        addToCanvas(item)
+                                    }
+                                }
+                            }
+                            .padding()
+                        }
                     }
                 }
             }
@@ -70,15 +96,41 @@ struct CanvasView: View {
                     }
                     .disabled(canvasItems.isEmpty)
                 }
-
-                if sizeClass == .compact {
-                    ToolbarItem(placement: .bottomBar) {
-                        itemPickerCompact
-                    }
-                }
             }
             .sheet(isPresented: $showingSaveSheet) {
                 saveSheet
+            }
+        }
+    }
+
+    // MARK: - Canvas Area
+
+    private var canvasArea: some View {
+        ZStack {
+            // Background - use subtle border instead of fill in dark mode
+            RoundedRectangle(cornerRadius: 16)
+                .fill(colorScheme == .light ? Color.gray.opacity(0.1) : Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                )
+
+            // Draggable items
+            ForEach($canvasItems) { $item in
+                CanvasItemView(
+                    state: $item,
+                    onDelete: { removeItem(item) }
+                )
+            }
+
+            if canvasItems.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "hand.draw")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.secondary)
+                    Text("Tap items below to add")
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -115,21 +167,6 @@ struct CanvasView: View {
             }
         }
         .background(.ultraThinMaterial)
-    }
-
-    // MARK: - Item Picker (iPhone Compact)
-
-    private var itemPickerCompact: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(items.prefix(20)) { item in
-                    ItemPickerThumbnail(item: item, size: 60) {
-                        addToCanvas(item)
-                    }
-                }
-            }
-            .padding(.horizontal)
-        }
     }
 
     // MARK: - Save Sheet
@@ -260,6 +297,28 @@ struct CanvasItemView: View {
     }
 }
 
+// MARK: - Category Chip
+
+private struct CategoryChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.accentColor : Color.secondary.opacity(0.2))
+                .foregroundStyle(isSelected ? .white : .primary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - Item Picker Thumbnail
 
 struct ItemPickerThumbnail: View {
@@ -268,12 +327,16 @@ struct ItemPickerThumbnail: View {
     let onTap: () -> Void
 
     @State private var image: UIImage?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: onTap) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.gray.opacity(0.1))
+                // Only show background in light mode to avoid white box around transparent images
+                if colorScheme == .light {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.gray.opacity(0.1))
+                }
 
                 if let image {
                     Image(uiImage: image)

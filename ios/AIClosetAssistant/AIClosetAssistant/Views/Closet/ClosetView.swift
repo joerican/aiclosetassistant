@@ -135,12 +135,16 @@ private struct CategoryFilterButton: View {
 struct ClothingItemCard: View {
     let item: ClothingItem
     @State private var image: UIImage?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 8) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.gray.opacity(0.1))
+                // No background in dark mode to avoid white box around transparent images
+                if colorScheme == .light {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.gray.opacity(0.1))
+                }
 
                 if let image {
                     Image(uiImage: image)

@@ -5,6 +5,7 @@ struct ItemDetailView: View {
     @Bindable var item: ClothingItem
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
     @State private var image: UIImage?
     @State private var isEditing = false
     @State private var showDeleteConfirmation = false
@@ -15,8 +16,11 @@ struct ItemDetailView: View {
                 VStack(spacing: 24) {
                     // Image
                     ZStack {
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(.gray.opacity(0.1))
+                        // Only show background in light mode to avoid white box around transparent images
+                        if colorScheme == .light {
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(.gray.opacity(0.1))
+                        }
 
                         if let image {
                             Image(uiImage: image)

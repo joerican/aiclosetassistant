@@ -129,11 +129,15 @@ struct OutfitCard: View {
 struct OutfitItemThumbnail: View {
     let item: ClothingItem?
     @State private var image: UIImage?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
-            Rectangle()
-                .fill(.gray.opacity(0.1))
+            // Only show background in light mode to avoid white box around transparent images
+            if colorScheme == .light {
+                Rectangle()
+                    .fill(.gray.opacity(0.1))
+            }
 
             if let image {
                 Image(uiImage: image)
@@ -161,6 +165,8 @@ struct OutfitDetailView: View {
     let outfit: Outfit
     let items: [ClothingItem]
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @State private var showDeleteConfirmation = false
 
     private var outfitItems: [ClothingItem] {
         outfit.allItemIds.compactMap { id in
@@ -220,6 +226,26 @@ struct OutfitDetailView: View {
                         dismiss()
                     }
                 }
+                ToolbarItem(placement: .destructiveAction) {
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                }
+            }
+            .confirmationDialog(
+                "Delete Outfit",
+                isPresented: $showDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    modelContext.delete(outfit)
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Are you sure you want to delete this outfit?")
             }
         }
     }
@@ -228,12 +254,16 @@ struct OutfitDetailView: View {
 struct OutfitItemCard: View {
     let item: ClothingItem
     @State private var image: UIImage?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 8) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.gray.opacity(0.1))
+                // Only show background in light mode to avoid white box around transparent images
+                if colorScheme == .light {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.gray.opacity(0.1))
+                }
 
                 if let image {
                     Image(uiImage: image)

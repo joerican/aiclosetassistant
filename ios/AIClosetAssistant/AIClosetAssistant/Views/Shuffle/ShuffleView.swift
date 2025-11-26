@@ -12,6 +12,8 @@ struct ShuffleView: View {
     @State private var lockedSlots: Set<SlotType> = []
     @State private var isShuffling = false
     @State private var aiSuggestion: String?
+    @State private var showSaveSuccess = false
+    @State private var isSaving = false
 
     private var tops: [ClothingItem] { items.filter { $0.category == "tops" } }
     private var bottoms: [ClothingItem] { items.filter { $0.category == "bottoms" } }
@@ -99,15 +101,32 @@ struct ShuffleView: View {
                         Button {
                             saveOutfit()
                         } label: {
-                            Image(systemName: "heart")
+                            Image(systemName: isSaving ? "heart.fill" : "heart")
                         }
                         .buttonStyle(.bordered)
-                        .disabled(selectedTop == nil)
+                        .disabled(selectedTop == nil || isSaving)
                     }
                     .padding(.horizontal)
                 }
             }
             .navigationTitle("Shuffle")
+            .overlay {
+                if showSaveSuccess {
+                    VStack(spacing: 12) {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 50))
+                            .foregroundStyle(.pink)
+
+                        Text("Outfit Saved!")
+                            .font(.headline)
+                    }
+                    .padding(32)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(.spring(duration: 0.3), value: showSaveSuccess)
             .onAppear {
                 if hasEnoughItems && selectedTop == nil {
                     shuffle()
@@ -166,6 +185,8 @@ struct ShuffleView: View {
               let bottom = selectedBottom,
               let shoes = selectedShoes else { return }
 
+        isSaving = true
+
         let outfit = Outfit(
             topId: top.id,
             bottomId: bottom.id,
@@ -174,6 +195,19 @@ struct ShuffleView: View {
         )
 
         modelContext.insert(outfit)
+        try? modelContext.save()
+
+        // Show feedback
+        showSaveSuccess = true
+
+        // Hide after delay
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
+            await MainActor.run {
+                showSaveSuccess = false
+                isSaving = false
+            }
+        }
     }
 
     enum SlotType: Hashable {
@@ -190,13 +224,17 @@ struct OutfitSlotView: View {
     let onLockToggle: () -> Void
 
     @State private var image: UIImage?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 16) {
             // Image
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.gray.opacity(0.1))
+                // Only show background in light mode to avoid white box around transparent images
+                if colorScheme == .light {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.gray.opacity(0.1))
+                }
 
                 if let image {
                     Image(uiImage: image)
