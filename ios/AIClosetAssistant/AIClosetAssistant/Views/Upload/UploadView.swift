@@ -796,7 +796,7 @@ private struct AddColorButton: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(Color.accentColor.opacity(0.2))
-                .foregroundStyle(.accentColor)
+                .foregroundStyle(Color.accentColor)
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
