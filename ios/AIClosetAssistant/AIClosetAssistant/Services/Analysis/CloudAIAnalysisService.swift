@@ -7,8 +7,7 @@ final class CloudAIAnalysisService: AIAnalysisProtocol {
     // MARK: - Configuration
 
     /// Base URL for your Cloudflare Workers API
-    /// Change this to your production URL
-    private let baseURL = "https://aiclosetassistant.pages.dev"
+    private let baseURL = "https://theclosetai.com"
 
     var isAnalyzing = false
     var analysisStatus = ""
