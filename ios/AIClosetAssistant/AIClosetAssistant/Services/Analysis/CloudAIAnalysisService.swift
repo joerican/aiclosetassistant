@@ -9,6 +9,10 @@ final class CloudAIAnalysisService: AIAnalysisProtocol {
     /// Base URL for your Cloudflare Workers API
     private let baseURL = "https://theclosetai.com"
 
+    /// API key for authentication (stored securely)
+    /// In production, retrieve this from Keychain or secure storage
+    private let apiKey = "closetai-ios-2024-secret"
+
     var isAnalyzing = false
     var analysisStatus = ""
 
@@ -40,6 +44,7 @@ final class CloudAIAnalysisService: AIAnalysisProtocol {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/analyze-image")!)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
         request.timeoutInterval = 60 // AI analysis can take time
 
         var body = Data()

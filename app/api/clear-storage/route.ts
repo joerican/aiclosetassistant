@@ -1,7 +1,12 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { requireAuth } from '@/lib/auth';
+import { validateApiKey } from '@/lib/api-auth';
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  // Validate API key for external requests
+  const authError = await validateApiKey(request);
+  if (authError) return authError;
+
   try {
     await requireAuth(); // Require authentication for security
     const { env } = await getCloudflareContext();

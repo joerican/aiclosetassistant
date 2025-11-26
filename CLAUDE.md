@@ -643,3 +643,4 @@ Cloudflare Images API does not support automatic trimming of transparent pixels.
 - R2: No automatic public URLs (using `/api/images/` proxy route)
 - always commit and push after making change so we can have good version control to rollback changes
 - remeber this db issue about prouction vs local so it doesnt happen again
+- always update the build number so xcode has the lastest build

@@ -1,7 +1,12 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { requireAuth } from '@/lib/auth';
+import { validateApiKey } from '@/lib/api-auth';
 
 export async function POST(request: Request) {
+  // Validate API key for external requests
+  const authError = await validateApiKey(request);
+  if (authError) return authError;
+
   try {
     const userId = await requireAuth();
 

@@ -1,7 +1,12 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { decode } from 'fast-png';
+import { validateApiKey } from '@/lib/api-auth';
 
 export async function POST(request: Request) {
+  // Validate API key
+  const authError = await validateApiKey(request);
+  if (authError) return authError;
+
   try {
     const formData = await request.formData();
     const image = formData.get('image') as File;
